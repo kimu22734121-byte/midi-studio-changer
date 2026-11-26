@@ -10,6 +10,27 @@ const LOOKAHEAD = 0.2; // 秒
 const TICK_MS = 25;
 const FALLBACK_ROLES = { melody: 80, chords: 48, bass: 38, other: 0 };
 
+/** 残響の元になる音（だんだん小さくなるノイズ）を作る */
+function makeImpulse(ctx, seconds) {
+  const rate = ctx.sampleRate;
+  const len = Math.round(rate * seconds);
+  const buf = ctx.createBuffer(2, len, rate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      // 高い音ほど早く消える（自然なホールの響き）
+      const white = Math.random() * 2 - 1;
+      const k = 0.2 + 0.75 * t;
+      lp = lp * k + white * (1 - k);
+      const env = (1 - t) ** 2.2 * Math.min(1, i / (rate * 0.008));
+      d[i] = (white * (1 - t) + lp * t) * env;
+    }
+  }
+  return buf;
+}
+
 export class Player {
   constructor({ onEnd = () => {}, onAutoReduce = () => {} } = {}) {
     this.onEnd = onEnd;
@@ -41,19 +62,35 @@ export class Player {
       comp.threshold.value = -12;
       comp.ratio.value = 4;
       this.master.connect(comp).connect(ctx.destination);
-      // スーファミ風のやまびこ（エコー）
-      this.echoIn = ctx.createGain();
-      const delay = ctx.createDelay(1);
-      delay.delayTime.value = 0.24;
-      const fb = ctx.createGain();
-      fb.gain.value = 0.38;
+      this.out = comp;
+      // やまびこ（エコー）：スーファミ風・宇宙で使う
+      this.echoDelay = ctx.createDelay(1.5);
+      this.echoFb = ctx.createGain();
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
       lp.frequency.value = 2800;
       this.echoWet = ctx.createGain();
-      this.echoIn.connect(delay).connect(lp).connect(fb).connect(delay);
+      this.master.connect(this.echoDelay).connect(lp).connect(this.echoFb).connect(this.echoDelay);
       lp.connect(this.echoWet).connect(comp);
-      this.master.connect(this.echoIn);
+      // 響き（リバーブ）：ホールで鳴らしたような広がり
+      this.reverb = ctx.createConvolver();
+      this.reverbWet = ctx.createGain();
+      this.master.connect(this.reverb).connect(this.reverbWet).connect(comp);
+      // コーラス：左右に少しずつずらした音を重ねて、厚みと広がりを出す
+      this.chorusWet = ctx.createGain();
+      const merger = ctx.createChannelMerger(2);
+      [0.013, 0.019].forEach((base, ch) => {
+        const d = ctx.createDelay(0.05);
+        d.delayTime.value = base;
+        const lfo = ctx.createOscillator();
+        lfo.frequency.value = ch ? 0.31 : 0.23;
+        const depth = ctx.createGain();
+        depth.gain.value = 0.003;
+        lfo.connect(depth).connect(d.delayTime);
+        lfo.start();
+        this.master.connect(d).connect(merger, 0, ch);
+      });
+      merger.connect(this.chorusWet).connect(comp);
       this.applySetMix();
       this.buildTrackGains();
     }
@@ -62,8 +99,19 @@ export class Player {
 
   applySetMix() {
     if (!this.ctx) return;
+    const fx = this.set.fx || {};
     this.master.gain.value = 0.9 * (this.set.gain || 1);
-    this.echoWet.gain.value = this.set.echo ? 0.32 : 0;
+    const echo = fx.echo || (this.set.echo ? { time: 0.24, feedback: 0.38, wet: 0.32 } : null);
+    this.echoWet.gain.value = echo ? echo.wet : 0;
+    this.echoFb.gain.value = echo ? echo.feedback : 0;
+    this.echoDelay.delayTime.value = echo ? echo.time : 0.24;
+    this.chorusWet.gain.value = fx.chorus || 0;
+    const rv = fx.reverb;
+    this.reverbWet.gain.value = rv ? rv.wet : 0;
+    if (rv && this.reverbTime !== rv.time) {
+      this.reverb.buffer = makeImpulse(this.ctx, rv.time);
+      this.reverbTime = rv.time;
+    }
   }
 
   buildTrackGains() {
