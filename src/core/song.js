@@ -10,6 +10,7 @@
 //     isDrum: boolean,
 //     tone: string,              // 波形シンセの音色ID（src/audio/instruments.js）
 //     program: number | null,    // 元の楽器番号（GM 0-127）。MIDI・MusicXMLのときだけ。null ならセットのおすすめ楽器を使う
+//     layer: number,             // 0=元のパート、1以上=編成（src/core/arrange.js）で増やしたパート
 //     notes: [{ t, d, p, v }]    // t=開始(秒) d=長さ(秒) p=音の高さ(MIDI番号) v=強さ(1-127)
 //   }]
 // }
@@ -62,6 +63,7 @@ export function createSong({ title = '無題', bpm = 120, source = '', tracks = 
       isDrum: !!tr.isDrum,
       tone: tr.tone || defaultTone(tr.role, tr.isDrum),
       program: Number.isInteger(tr.program) ? tr.program : null,
+      layer: tr.layer || 0, // 0=元のパート、1以上=編成で増やしたパート
       notes,
     });
   }
@@ -95,12 +97,13 @@ export function planVoices(song, limit, { muted = [] } = {}) {
   const all = [];
   song.tracks.forEach((tr, ti) => {
     if (muted[ti]) return;
-    const base = ROLE_PRIORITY[tr.role] ?? 1;
+    // 編成で増やしたパートは、元のパートより必ず後回し（層が浅いものから残す）
+    const base = tr.layer ? 0.9 - tr.layer * 0.12 : ROLE_PRIORITY[tr.role] ?? 1;
     // 和音の一番上と一番下の音は、内側の音より少し大事にする
     const edges = tr.role === 'chords' || tr.role === 'other' ? chordEdges(tr.notes) : null;
     for (const n of tr.notes) {
-      let pr = base + (n.v / 127) * 0.4;
-      if (edges && edges.has(n)) pr += 0.3;
+      let pr = base + (n.v / 127) * (tr.layer ? 0.05 : 0.4);
+      if (edges && !tr.layer && edges.has(n)) pr += 0.3;
       all.push({ t: n.t, d: n.d, p: n.p, v: n.v, track: ti, note: n, pr, drum: tr.isDrum });
     }
   });

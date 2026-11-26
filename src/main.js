@@ -7,6 +7,7 @@ import { TONES, DRUM_KITS } from './audio/instruments.js';
 import { SETS, loadSet, setFromFile, presetLabel, isCached } from './audio/soundfonts.js';
 import { PianoRoll } from './ui/pianoroll.js';
 import { writeMidi } from './core/midi-file.js';
+import { expandEnsemble } from './core/arrange.js';
 import { POLY_STEPS, POLY_DEFAULT, ROLE_LABELS, nearestStepIndex, clampPolyphony, noteCount } from './core/song.js';
 
 const $ = (s) => document.querySelector(s);
@@ -32,12 +33,15 @@ const PRESETS = {
   original: { poly: 64, set: 'wave' },
 };
 
-let song = null;
+let song = null; // いま鳴らしている曲（編成で楽器を増やしたあと）
+let baseSong = null; // 読み込んだままの曲
+let ensembleMode = 'auto';
 const roll = new PianoRoll($('#roll'));
 const player = new Player({
   onEnd: () => updatePlayButton(),
   onAutoReduce: (n) => {
     setPolyUI(n);
+    refreshEnsemble();
     toast(`重くなってきたので、音の数を ${n} に減らしました`);
   },
 });
@@ -181,18 +185,51 @@ $('#rec-btn').addEventListener('click', async () => {
 
 // ---------- 曲をセット ----------
 function setSong(s) {
-  song = s;
-  player.setSong(s);
-  roll.setSong(s);
+  baseSong = s;
+  // MIDI・MusicXML は元の編成を大事にする。音声・楽譜テキストから作った曲は楽器を増やす
+  ensembleMode = s.source === 'midi' || s.source === 'musicxml' ? 'original' : 'auto';
+  $('#ensemble-mode').value = ensembleMode;
+  song = arranged();
+  player.setSong(song);
+  roll.setSong(song);
   for (const el of $$('.needs-song')) el.hidden = false;
   $('#song-title').textContent = s.title;
-  const parts = s.tracks.map((t) => ROLE_LABELS[t.role] || t.role);
-  $('#song-info').textContent = `速さ：1分あたり${Math.round(s.bpm)}拍 ／ パート：${[...new Set(parts)].join('・')} ／ 音符 ${noteCount(s)}個`;
+  updateSongInfo();
   renderTracks();
   setPolyUI(player.polyphony);
   updateTime();
   $('#player-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// ---------- 編成（音の数に合わせて楽器を増やす） ----------
+function arranged() {
+  return ensembleMode === 'auto' ? expandEnsemble(baseSong, player.polyphony) : baseSong;
+}
+function updateSongInfo() {
+  const parts = baseSong.tracks.map((t) => ROLE_LABELS[t.role] || t.role);
+  $('#song-info').textContent = `速さ：1分あたり${Math.round(baseSong.bpm)}拍 ／ パート：${[...new Set(parts)].join('・')} ／ 音符 ${noteCount(song)}個`;
+  const added = song.tracks.length - baseSong.tracks.length;
+  $('#ensemble-info').textContent = added > 0
+    ? `いま ${song.tracks.length} パートで演奏中（元の ${baseSong.tracks.length} パート＋重ね・ハモり・アルペジオなど ${added} パート）`
+    : ensembleMode === 'auto'
+      ? `いま ${song.tracks.length} パートで演奏中（音の数を 8 以上にすると楽器が増えます）`
+      : `いま ${song.tracks.length} パートで演奏中（元のパートだけ）`;
+}
+/** 音の数や設定が変わったら、楽器の数を作り直す（再生は止めない） */
+function refreshEnsemble() {
+  if (!baseSong) return;
+  const next = arranged();
+  if (next.tracks.length === song.tracks.length && next.tracks.every((t, i) => t.name === song.tracks[i].name)) return;
+  song = next;
+  player.replaceSong(song, baseSong.tracks.length);
+  roll.setSong(song);
+  updateSongInfo();
+  renderTracks();
+}
+$('#ensemble-mode').addEventListener('change', (e) => {
+  ensembleMode = e.target.value;
+  refreshEnsemble();
+});
 
 // ---------- 再生 ----------
 function fmt(sec) {
@@ -243,6 +280,7 @@ function applyPoly(n) {
   n = clampPolyphony(n);
   player.setPolyphony(n);
   setPolyUI(n);
+  refreshEnsemble();
 }
 $('#poly-slider').addEventListener('input', (e) => applyPoly(POLY_STEPS[e.target.value]));
 $('#poly-number').addEventListener('change', (e) => applyPoly(e.target.value));
@@ -367,12 +405,24 @@ function esc(s) {
 function renderTracks() {
   const list = $('#track-list');
   list.innerHTML = '';
+  const addedCount = song.tracks.filter((t) => t.layer).length;
+  let addedList = null;
+  if (addedCount) {
+    const det = document.createElement('details');
+    det.className = 'added-parts';
+    det.innerHTML = `<summary>自動で増やしたパート（${addedCount}）</summary><div class="track-list"></div>`;
+    addedList = det.querySelector('.track-list');
+    list.after(det);
+  }
+  document.querySelectorAll('.added-parts').forEach((d) => { if (d.querySelector('.track-list') !== addedList) d.remove(); });
   song.tracks.forEach((tr, i) => {
     const st = player.settings[i];
     const el = document.createElement('div');
     el.className = `track${st.muted ? ' muted' : ''}`;
     const role = ROLE_LABELS[tr.role] || tr.role;
-    const name = tr.name && tr.name !== role ? `${role} <small>${esc(tr.name)}</small>` : role;
+    const name = tr.layer
+      ? `${esc(tr.name)} <span class="badge-auto">自動</span>`
+      : tr.name && tr.name !== role ? `${role} <small>${esc(tr.name)}</small>` : role;
     const options = player.bank ? presetOptions(i) : waveOptions(tr.isDrum, st.tone);
     el.innerHTML = `
       <div class="bar" style="background: var(--c-${tr.isDrum ? 'drums' : tr.role})"></div>
@@ -392,7 +442,7 @@ function renderTracks() {
       e.currentTarget.textContent = st.muted ? '🔇' : '🔊';
     });
     el.querySelector('input[type=range]').addEventListener('input', (e) => player.setVolume(i, Number(e.target.value)));
-    list.appendChild(el);
+    (tr.layer && addedList ? addedList : list).appendChild(el);
   });
 }
 

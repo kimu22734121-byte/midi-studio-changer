@@ -124,6 +124,14 @@
         <button class="btn preset" data-preset="rich">✨ リッチ<small>64音・本物っぽい楽器</small></button>
         <button class="btn preset" data-preset="original">⚡ 軽い波形<small>64音・最初の音</small></button>
       </div>
+      <div class="ensemble">
+        <label for="ensemble-mode" class="ens-label">楽器の数</label>
+        <select id="ensemble-mode">
+          <option value="auto">音の数に合わせて楽器を増やす（おすすめ）</option>
+          <option value="original">元のパートだけで鳴らす</option>
+        </select>
+        <p class="hint" id="ensemble-info"></p>
+      </div>
       <label class="check"><input type="checkbox" id="auto-reduce" checked> 重くて音がとぎれたら、自動で音の数を減らす</label>
     </section>
 

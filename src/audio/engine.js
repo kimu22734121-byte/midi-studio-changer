@@ -143,11 +143,31 @@ export class Player {
     this.replan();
   }
 
-  /** セットを変えたとき・曲を読み込んだときに、パートごとの楽器を決め直す */
-  assignInstruments() {
+  /**
+   * 再生を止めずに曲を入れ替える（編成で楽器を増やしたとき）。
+   * 先頭の keep 個のトラック（元のパート）は、選んだ楽器・音量・消音をそのまま引き継ぐ。
+   */
+  replaceSong(song, keep = 0) {
+    const was = this.playing;
+    const pos = this.currentTime;
+    if (was) this.pause();
+    const old = this.settings;
+    this.song = song;
+    this.settings = song.tracks.map((_, i) => (i < keep && old[i] ? old[i] : { tone: null, program: 0, preset: null, muted: false, volume: 1 }));
+    this.assignInstruments(keep);
+    this.duration = songDuration(song);
+    this.buildTrackGains();
+    this.replan();
+    this.pos = Math.min(pos, this.duration);
+    if (was) this.play();
+  }
+
+  /** セットを変えたとき・曲を読み込んだときに、パートごとの楽器を決め直す（from より前のトラックはそのまま） */
+  assignInstruments(from = 0) {
     if (!this.song) return;
     const roles = this.set.roles || FALLBACK_ROLES;
     this.song.tracks.forEach((tr, i) => {
+      if (i < from) return;
       const st = this.settings[i];
       st.tone = tr.tone || defaultTone(tr.role, tr.isDrum);
       st.program = tr.isDrum ? (tr.program ?? 0) : (tr.program ?? roles[tr.role] ?? 0);
