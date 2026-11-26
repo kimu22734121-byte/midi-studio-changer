@@ -97,4 +97,4 @@ tests/                node --test で動くテスト
 - 曲データ（Song）の形は `src/core/song.js` 冒頭のコメント参照。時間はすべて秒。
 - 解析系（`src/analysis/`）は画面やWeb Audioに依存させない（MusicXML の DOMParser だけ例外）。
 - 動作確認：`python3 -m http.server 8000` → http://localhost:8000 ／ テスト：`node --test tests/`
-- GitHub Pages：リポジトリのルートをそのまま公開（`.nojekyll` あり）。
+- GitHub Pages：`main` に push すると `.github/workflows/pages.yml` がテスト後に自動公開（Settings → Pages の Source は「GitHub Actions」）。

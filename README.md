@@ -31,7 +31,10 @@ python3 -m http.server 8000
 
 ## GitHub Pages で公開する
 
-リポジトリの Settings → Pages → 「Deploy from a branch」で `main` ブランチの `/ (root)` を選ぶだけです（ビルド不要）。
+公開URL：https://kimu22734121-byte.github.io/midi-studio-changer/
+
+`main` ブランチに変更が入ると、GitHub Actions（`.github/workflows/pages.yml`）がテストしてから自動で公開します。
+はじめて公開するときだけ、Settings → Pages → 「Build and deployment」の Source を **GitHub Actions** にしてください。
 
 ## ライセンス
 
