@@ -9,42 +9,42 @@ import { SoundFontBank } from './sf-bank.js';
 export const SETS = [
   {
     id: 'wave', icon: '⚡', label: '軽い波形シンセ', desc: '読み込みなし・いちばん軽い。左右に広がる厚めのシンセとピコピコ音',
-    builtin: true, fx: { chorus: 0.3, reverb: { wet: 0.16, time: 1.8 } },
+    builtin: true, gain: 0.85, fx: { chorus: 0.3, reverb: { wet: 0.16, time: 1.8 } },
   },
   {
     id: 'orchestra', icon: '🎻', label: 'オーケストラ（豪華）', desc: '本物の弦・金管・木管・ハープ・ティンパニを録音した音。ホールの響き付き',
-    file: 'soundfonts/midichen-orchestra.sf2', size: 0, gain: 1,
+    file: 'soundfonts/midichen-orchestra.sf2', size: 33.4, gain: 1.43,
     roles: { melody: 40, chords: 48, bass: 32, other: 46 }, fx: { reverb: { wet: 0.42, time: 3.2 } },
   },
   {
     id: 'jazz', icon: '🎷', label: 'ジャズ・ピアノトリオ（豪華）', desc: 'コンサート用グランドピアノ・ウッドベース・ジャズドラムを録音した音',
-    file: 'soundfonts/midichen-jazz.sf2', size: 0, gain: 1,
+    file: 'soundfonts/midichen-jazz.sf2', size: 27.3, gain: 1.88,
     roles: { melody: 0, chords: 0, bass: 32, other: 0 }, fx: { reverb: { wet: 0.24, time: 2.0 } },
   },
   {
     id: 'gm', icon: '🎹', label: '標準（いろいろな楽器）', desc: 'ピアノ・ギター・ストリングス・ドラムなど128種類。どんな曲にも合う',
-    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.75,
+    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.85,
     roles: { melody: 80, chords: 48, bass: 38, other: 0 }, fx: { reverb: { wet: 0.2, time: 1.8 } },
   },
   {
     id: 'synth', icon: '🌌', label: 'シンセ', desc: 'スーパーソー・FMエレピ・アナログベースなど、キラキラした電子音',
-    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.65,
+    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.69,
     roles: { melody: 81, chords: 48, bass: 32, other: 4 }, fx: { chorus: 0.35, reverb: { wet: 0.22, time: 2.2 } },
   },
   {
     id: 'space', icon: '🚀', label: '宇宙（アンビエント）', desc: '広がるパッドと長い響き・やまびこで、宇宙をただようような音',
-    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.7, labels: 'synth', shared: 'シンセと共通',
+    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.4, labels: 'synth', shared: 'シンセと共通',
     roles: { melody: 82, chords: 91, bass: 33, other: 96 },
     fx: { chorus: 0.3, reverb: { wet: 0.55, time: 5.5 }, echo: { time: 0.42, feedback: 0.42, wet: 0.22 } },
   },
   {
     id: 'sfc', icon: '🕹️', label: 'スーファミ風', desc: '標準の音をざらっと粗くして、やまびこ（エコー）をかけた懐かしい音',
-    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, lofi: true, gain: 1.1, labels: 'gm', shared: '標準と共通',
+    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, lofi: true, gain: 1.2, labels: 'gm', shared: '標準と共通',
     roles: { melody: 73, chords: 48, bass: 33, other: 46 }, fx: { echo: { time: 0.24, feedback: 0.38, wet: 0.32 } },
   },
   {
     id: 'chip', icon: '👾', label: 'ファミコン風', desc: '矩形波・三角波・ノイズのピコピコ音（アプリ独自）',
-    file: 'soundfonts/midichen-chip.sf2', size: 0.7, gain: 0.45,
+    file: 'soundfonts/midichen-chip.sf2', size: 0.7, gain: 0.47,
     roles: { melody: 80, chords: 81, bass: 32, other: 0 },
   },
 ];
