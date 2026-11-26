@@ -101,7 +101,14 @@ export function presetLabel(setId, preset) {
 }
 
 const parsed = new Map(); // file → parseSf2 の結果（スーファミ風と標準で共有）
-const CACHE = 'midichen-soundfonts-v1';
+// 端末に保存したセットの入れ物の名前。セットの中身を作り直したら番号を上げる
+// （同じファイル名でも、古い保存を使わずに新しいものをダウンロードし直す）
+// v2：オーケストラを MS Basic から作り直した
+const CACHE = 'midichen-soundfonts-v2';
+try {
+  // 古い番号の保存は消す（端末の容量を空ける）
+  caches.keys().then((keys) => keys.filter((k) => k.startsWith('midichen-soundfonts-') && k !== CACHE).forEach((k) => caches.delete(k))).catch(() => {});
+} catch {}
 
 async function fetchWithProgress(url, onProgress) {
   // 一度ダウンロードしたら端末に保存して、次からは通信しない
@@ -111,7 +118,7 @@ async function fetchWithProgress(url, onProgress) {
     const hit = await cache.match(url).catch(() => null);
     if (hit) return hit.arrayBuffer();
   }
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'no-cache' }); // ブラウザの一時保存も、新しいか確かめてから使う
   if (!res.ok) throw new Error(`サウンドフォントをダウンロードできませんでした（${res.status}）`);
   // 端末への保存はブラウザに任せる（メモリ上でコピーを作らない）
   if (cache) cache.put(url, res.clone()).catch(() => {});
