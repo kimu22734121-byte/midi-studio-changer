@@ -112,6 +112,8 @@ async function fetchWithProgress(url, onProgress) {
   }
   const res = await fetch(url);
   if (!res.ok) throw new Error(`サウンドフォントをダウンロードできませんでした（${res.status}）`);
+  // 端末への保存はブラウザに任せる（メモリ上でコピーを作らない）
+  if (cache) cache.put(url, res.clone()).catch(() => {});
   const total = Number(res.headers.get('content-length')) || 0;
   let buf;
   if (res.body && total) {
@@ -132,8 +134,20 @@ async function fetchWithProgress(url, onProgress) {
   } else {
     buf = await res.arrayBuffer();
   }
-  if (cache) cache.put(url, new Response(buf.slice(0))).catch(() => {});
   return buf;
+}
+
+/** このセットがもう端末に保存されているか（ダウンロードなしで使えるか） */
+export async function isCached(set) {
+  if (set.builtin) return true;
+  if (!set.file) return false;
+  if (parsed.has(set.file)) return true;
+  try {
+    const cache = await caches.open(CACHE);
+    return !!(await cache.match(set.file));
+  } catch {
+    return false;
+  }
 }
 
 /** セットを読み込んで SoundFontBank を返す（波形シンセのときは null） */

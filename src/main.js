@@ -4,7 +4,7 @@ import { decodeToMono } from './audio/decode.js';
 import { MicRecorder } from './audio/recorder.js';
 import { Player } from './audio/engine.js';
 import { TONES, DRUM_KITS } from './audio/instruments.js';
-import { SETS, loadSet, setFromFile, presetLabel } from './audio/soundfonts.js';
+import { SETS, loadSet, setFromFile, presetLabel, isCached } from './audio/soundfonts.js';
 import { PianoRoll } from './ui/pianoroll.js';
 import { writeMidi } from './core/midi-file.js';
 import { POLY_STEPS, POLY_DEFAULT, ROLE_LABELS, nearestStepIndex, clampPolyphony, noteCount } from './core/song.js';
@@ -136,7 +136,12 @@ $('#example-chords').addEventListener('click', () => { $('#score-text').value = 
 $('#demo-btn').addEventListener('click', () => run(async () => {
   setSong(loadScoreText(EXAMPLE_ABC));
   showStatus('お試し曲を読み込みました。', 1);
-  await player.play();
+  try {
+    await player.play();
+  } catch (err) {
+    console.error(err);
+    toast('音を出せませんでした。下の「聴く」の ▶ を押してください');
+  }
   updatePlayButton();
 }));
 
@@ -330,10 +335,14 @@ $('#sf2-file').addEventListener('change', async (e) => {
 
 renderSets();
 // 前回選んだセットを使う（一度ダウンロードしたものは端末に保存されているので通信しない）
-try {
-  const last = localStorage.getItem('midichen-set');
-  if (last && last !== 'wave') chooseSet(last);
-} catch {}
+(async () => {
+  let last = null;
+  try { last = localStorage.getItem('midichen-set'); } catch {}
+  const set = sets.find((x) => x.id === last);
+  if (!set || set.builtin) return;
+  if (await isCached(set)) chooseSet(last);
+  else setStatus(`前回の「${set.label}」は、セットのボタンを押すと読み込みます。`);
+})();
 
 // ---------- パートごとの楽器 ----------
 function waveOptions(isDrum, selected) {
@@ -423,3 +432,12 @@ $('#update-btn').addEventListener('click', () => {
   u.searchParams.set('v', Date.now());
   location.replace(u.toString());
 });
+
+// ---------- 思わぬエラーを画面に表示 ----------
+function showUnexpected(err) {
+  const msg = err?.message || String(err || '');
+  if (!msg) return;
+  showStatus(`エラーが起きました：${msg}（この文を作者に伝えると直せます）`, null, true);
+}
+window.addEventListener('error', (e) => showUnexpected(e.error || e.message));
+window.addEventListener('unhandledrejection', (e) => showUnexpected(e.reason));
