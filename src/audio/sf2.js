@@ -123,13 +123,15 @@ export function parseSf2(arrayBuffer) {
         if (!kr || !vr) continue;
         const s = shdr[g[G.sampleID]];
         if (!s || s.type & 0x8000) continue; // ROMサンプルは使わない
-        regions.push(makeRegion(g, s, kr, vr));
+        regions.push({ ...makeRegion(g, s, kr, vr), sampleIndex: g[G.sampleID] });
       }
     }
     if (regions.length) presets.push({ name: h.name, bank: h.bank, program: h.program, regions });
   }
   presets.sort((a, b) => a.bank - b.bank || a.program - b.program);
-  return { name, presets, pcm };
+  // SF3（音が圧縮されている形式）かどうか。アプリではそのまま鳴らせない
+  const compressed = shdr.some((s) => s.type & 0x10);
+  return { name, presets, pcm, samples: shdr, compressed };
 }
 
 function intersect(a = [0, 127], b = [0, 127]) {

@@ -13,7 +13,7 @@ test('音の数が多いほど楽器（パート）が増える', () => {
   const counts = [4, 8, 16, 32, 64, 128].map((n) => expandEnsemble(song, n).tracks.length);
   assert.equal(counts[0], song.tracks.length); // 4音では増やさない
   for (let i = 1; i < counts.length; i++) assert.ok(counts[i] > counts[i - 1], `${counts}`);
-  assert.ok(counts[4] >= 20, `64音で ${counts[4]} パート`);
+  assert.ok(counts[4] >= 40, `64音で ${counts[4]} パート`); // 64音なら40パート以上
   assert.ok(counts[4] <= ensembleSize(64, song.tracks.length)); // 目安（短い曲では音の少ないパートを省く）
 });
 

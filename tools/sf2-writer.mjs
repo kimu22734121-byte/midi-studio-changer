@@ -8,7 +8,7 @@ const GEN = {
   keyRange: 43, velRange: 44, instrument: 41, sampleID: 53, sampleModes: 54,
   attack: 34, hold: 35, decay: 36, sustain: 37, release: 38, delay: 33,
   attenuation: 48, pan: 17, coarseTune: 51, fineTune: 52, filterFc: 8, filterQ: 9,
-  exclusiveClass: 57, rootKey: 58,
+  exclusiveClass: 57, rootKey: 58, scaleTuning: 56,
 };
 const tc = (sec) => Math.round(1200 * Math.log2(Math.max(sec, 0.001)));
 
@@ -54,14 +54,15 @@ export function writeSf2({ name, copyright = '', comment = '', presets }) {
   const sIndex = new Map();
   for (const p of presets) for (const z of p.zones) if (!sIndex.has(z.sample)) { sIndex.set(z.sample, samples.length); samples.push(z.sample); }
 
-  const smpl = new Buf();
+  // 音のデータは1つの塊にまとめて書く（大きな音源でもメモリを使いすぎないように）
+  const total = samples.reduce((n, s) => n + s.data.length + 46, 0);
+  const pcm = new Int16Array(total);
   const shdr = new Buf();
   let pos = 0;
   for (const s of samples) {
     const start = pos;
-    for (const v of s.data) smpl.i16(Math.max(-32767, Math.min(32767, Math.round(v * 32767))));
+    for (let i = 0; i < s.data.length; i++) pcm[pos + i] = Math.max(-32767, Math.min(32767, Math.round(s.data[i] * 32767)));
     pos += s.data.length;
-    for (let i = 0; i < 46; i++) smpl.i16(0);
     const end = pos;
     pos += 46;
     shdr.str(s.name, 20);
@@ -88,6 +89,7 @@ export function writeSf2({ name, copyright = '', comment = '', presets }) {
       igen.u16(GEN.keyRange); igen.u8(z.keyLo ?? 0); igen.u8(z.keyHi ?? 127); igenN++;
       if (z.velLo !== undefined) { igen.u16(GEN.velRange); igen.u8(z.velLo); igen.u8(z.velHi ?? 127); igenN++; }
       if (g.attack !== undefined) add(GEN.attack, tc(g.attack));
+      if (g.delay) add(GEN.delay, tc(g.delay));
       if (g.hold !== undefined) add(GEN.hold, tc(g.hold));
       if (g.decay !== undefined) add(GEN.decay, tc(g.decay));
       if (g.sustain !== undefined) add(GEN.sustain, Math.round(g.sustain));
@@ -97,6 +99,8 @@ export function writeSf2({ name, copyright = '', comment = '', presets }) {
       if (g.coarseTune) add(GEN.coarseTune, g.coarseTune);
       if (g.fineTune) add(GEN.fineTune, Math.round(g.fineTune));
       if (g.filterHz) add(GEN.filterFc, Math.round(1200 * Math.log2(g.filterHz / 8.176)));
+      if (g.filterQ) add(GEN.filterQ, Math.round(g.filterQ));
+      if (g.scaleTuning !== undefined && g.scaleTuning !== 100) add(GEN.scaleTuning, g.scaleTuning);
       if (g.exclusiveClass) add(GEN.exclusiveClass, g.exclusiveClass);
       if (g.rootKey !== undefined) add(GEN.rootKey, g.rootKey);
       add(GEN.sampleModes, z.sample.loop ? 1 : 0);
@@ -120,7 +124,7 @@ export function writeSf2({ name, copyright = '', comment = '', presets }) {
   const body = new Buf();
   body.bytes(new TextEncoder().encode('sfbk'));
   body.bytes(list('INFO', info));
-  body.bytes(list('sdta', [chunk('smpl', smpl.out())]));
+  body.bytes(list('sdta', [chunk('smpl', new Uint8Array(pcm.buffer))]));
   body.bytes(list('pdta', [
     chunk('phdr', phdr.out()), chunk('pbag', pbag.out()), chunk('pmod', mod), chunk('pgen', pgen.out()),
     chunk('inst', inst.out()), chunk('ibag', ibag.out()), chunk('imod', mod), chunk('igen', igen.out()),
