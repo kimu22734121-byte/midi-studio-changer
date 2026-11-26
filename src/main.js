@@ -4,6 +4,7 @@ import { decodeToMono } from './audio/decode.js';
 import { MicRecorder } from './audio/recorder.js';
 import { Player } from './audio/engine.js';
 import { TONES, DRUM_KITS } from './audio/instruments.js';
+import { SETS, loadSet, setFromFile, presetLabel } from './audio/soundfonts.js';
 import { PianoRoll } from './ui/pianoroll.js';
 import { writeMidi } from './core/midi-file.js';
 import { POLY_STEPS, POLY_DEFAULT, ROLE_LABELS, nearestStepIndex, clampPolyphony, noteCount } from './core/song.js';
@@ -25,10 +26,10 @@ C G | Am Em | F C | F G
 C G | Am Em | F G | C C`;
 
 const PRESETS = {
-  famicom: { poly: 4, tones: { melody: 'pulse25', chords: 'square', bass: 'triangle', other: 'pulse12', drums: 'kit-retro' } },
-  sfc: { poly: 16, tones: { melody: 'lead', chords: 'strings', bass: 'bass', other: 'pluck', drums: 'kit-synth' } },
-  rich: { poly: 64, tones: { melody: 'lead', chords: 'pad', bass: 'bass', other: 'piano', drums: 'kit-synth' } },
-  original: { poly: 64, tones: null },
+  famicom: { poly: 4, set: 'chip' },
+  sfc: { poly: 16, set: 'sfc' },
+  rich: { poly: 64, set: 'gm' },
+  original: { poly: 64, set: 'wave' },
 };
 
 let song = null;
@@ -244,22 +245,98 @@ $('#auto-reduce').addEventListener('change', (e) => { player.autoReduce = e.targ
 setPolyUI(POLY_DEFAULT);
 
 for (const b of $$('.preset')) {
-  b.addEventListener('click', () => {
+  b.addEventListener('click', async () => {
     if (!song) return;
     const pr = PRESETS[b.dataset.preset];
-    song.tracks.forEach((tr, i) => {
-      const tone = pr.tones ? pr.tones[tr.isDrum ? 'drums' : tr.role] : tr.tone;
-      player.setTone(i, tone);
-    });
     applyPoly(pr.poly);
-    renderTracks();
+    if (!(await chooseSet(pr.set))) return;
     b.classList.add('active');
     toast(`${b.firstChild.textContent.trim()} にしました`);
   });
 }
 
-// ---------- 音色 ----------
-function toneOptions(isDrum, selected) {
+// ---------- 音のセット ----------
+const sets = [...SETS];
+let currentSetId = 'wave';
+let loadingSet = false;
+
+function renderSets() {
+  const box = $('#set-list');
+  box.innerHTML = '';
+  for (const set of sets) {
+    const b = document.createElement('button');
+    b.className = 'set-btn';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(set.id === currentSetId));
+    b.disabled = loadingSet;
+    const size = set.builtin ? '読み込みなし' : set.user ? 'この端末のファイル' : `約${set.size}MB${set.size > 10 ? '（Wi-Fi推奨）' : ''}`;
+    b.innerHTML = `<span class="t">${set.icon} ${esc(set.label)}</span><span class="d">${esc(set.desc)}</span><span class="s">${size}</span>`;
+    b.addEventListener('click', () => chooseSet(set.id));
+    box.appendChild(b);
+  }
+}
+
+function setStatus(msg, p = null, error = false) {
+  const st = $('#set-status');
+  st.hidden = !msg;
+  st.classList.toggle('error', error);
+  $('#set-status-text').textContent = msg || '';
+  $('#set-progress').parentElement.hidden = p === null;
+  if (p !== null) $('#set-progress').style.width = `${Math.round(p * 100)}%`;
+}
+
+/** セットを選ぶ（必要ならダウンロード）。うまくいけば true */
+async function chooseSet(id) {
+  const set = sets.find((x) => x.id === id);
+  if (!set || loadingSet) return false;
+  if (id === currentSetId) return true;
+  loadingSet = true;
+  renderSets();
+  try {
+    if (!set.builtin) setStatus(`「${set.label}」を読み込んでいます…`, 0);
+    const bank = await loadSet(set, (p) => setStatus(`「${set.label}」をダウンロード中… ${Math.round(p * 100)}%（約${set.size}MB）`, p));
+    player.setSoundSet(set, bank);
+    currentSetId = id;
+    try { localStorage.setItem('midichen-set', set.user ? 'wave' : id); } catch {}
+    setStatus('');
+    for (const b of $$('.preset')) b.classList.remove('active');
+    return true;
+  } catch (err) {
+    console.error(err);
+    setStatus(`読み込めませんでした：${err.message || err}`, null, true);
+    return false;
+  } finally {
+    loadingSet = false;
+    renderSets();
+    if (song) renderTracks();
+  }
+}
+
+$('#sf2-file').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (!f) return;
+  try {
+    setStatus('サウンドフォントを読み込んでいます…', null);
+    const set = setFromFile(await f.arrayBuffer(), f.name);
+    sets.push(set);
+    setStatus('');
+    await chooseSet(set.id);
+    toast(`「${set.label}」を追加しました`);
+  } catch (err) {
+    setStatus(`読み込めませんでした：${err.message || err}`, null, true);
+  }
+});
+
+renderSets();
+// 前回選んだセットを使う（一度ダウンロードしたものは端末に保存されているので通信しない）
+try {
+  const last = localStorage.getItem('midichen-set');
+  if (last && last !== 'wave') chooseSet(last);
+} catch {}
+
+// ---------- パートごとの楽器 ----------
+function waveOptions(isDrum, selected) {
   if (isDrum) {
     return Object.entries(DRUM_KITS).map(([id, k]) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${k.label}</option>`).join('');
   }
@@ -268,7 +345,15 @@ function toneOptions(isDrum, selected) {
   return Object.entries(groups).map(([g, list]) =>
     `<optgroup label="${g}">${list.map(([id, t]) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${t.label}</option>`).join('')}</optgroup>`).join('');
 }
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function presetOptions(i) {
+  const st = player.settings[i];
+  const list = player.instrumentChoices(i) || [];
+  if (!list.length) return '<option>（このセットには入っていません）</option>';
+  return list.map((p) => `<option value="${p.program}" ${p === st.preset ? 'selected' : ''}>${esc(presetLabel(currentSetId, p))}</option>`).join('');
+}
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
 
 function renderTracks() {
   const list = $('#track-list');
@@ -279,16 +364,17 @@ function renderTracks() {
     el.className = `track${st.muted ? ' muted' : ''}`;
     const role = ROLE_LABELS[tr.role] || tr.role;
     const name = tr.name && tr.name !== role ? `${role} <small>${esc(tr.name)}</small>` : role;
+    const options = player.bank ? presetOptions(i) : waveOptions(tr.isDrum, st.tone);
     el.innerHTML = `
       <div class="bar" style="background: var(--c-${tr.isDrum ? 'drums' : tr.role})"></div>
       <div class="name">${name}</div>
-      <select aria-label="${role}の音色">${toneOptions(tr.isDrum, st.tone)}</select>
+      <select aria-label="${role}の楽器">${options}</select>
       <div class="ctrls">
         <button class="btn small mute-btn" aria-label="${role}を消す">${st.muted ? '🔇' : '🔊'}</button>
         <input type="range" min="0" max="1.5" step="0.05" value="${st.volume}" aria-label="${role}の音量">
       </div>`;
     el.querySelector('select').addEventListener('change', (e) => {
-      player.setTone(i, e.target.value);
+      player.setInstrument(i, e.target.value);
       for (const b of $$('.preset')) b.classList.remove('active');
     });
     el.querySelector('.mute-btn').addEventListener('click', (e) => {
@@ -305,10 +391,10 @@ function renderTracks() {
 $('#save-midi').addEventListener('click', () => {
   if (!song) return;
   // 今の音数で選ばれた音だけ・今の音色で保存
-  const tracks = song.tracks.map((tr, i) => ({ ...tr, tone: player.settings[i].tone, notes: [] }));
+  const tracks = song.tracks.map((tr, i) => ({ ...tr, gm: player.programOf(i), notes: [] }));
   for (const ev of player.events) tracks[ev.track].notes.push({ t: ev.t, d: ev.d, p: ev.p, v: ev.v });
   const out = { ...song, tracks: tracks.filter((t, i) => t.notes.length && !player.settings[i].muted) };
-  const bytes = writeMidi(out, (tr) => (TONES[tr.tone]?.gm ?? 0));
+  const bytes = writeMidi(out, (tr) => tr.gm);
   const url = URL.createObjectURL(new Blob([bytes], { type: 'audio/midi' }));
   const a = document.createElement('a');
   a.href = url;

@@ -28,7 +28,7 @@ jobs:
       - name: 公開するファイルをまとめる
         run: |
           mkdir -p _site
-          cp -r index.html css src .nojekyll _site/
+          cp -r index.html css src soundfonts .nojekyll _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

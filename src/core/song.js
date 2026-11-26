@@ -8,7 +8,8 @@
 //     name: string,
 //     role: 'melody' | 'chords' | 'bass' | 'drums' | 'other',
 //     isDrum: boolean,
-//     tone: string,              // 音色ID（src/audio/instruments.js）
+//     tone: string,              // 波形シンセの音色ID（src/audio/instruments.js）
+//     program: number | null,    // 元の楽器番号（GM 0-127）。MIDI・MusicXMLのときだけ。null ならセットのおすすめ楽器を使う
 //     notes: [{ t, d, p, v }]    // t=開始(秒) d=長さ(秒) p=音の高さ(MIDI番号) v=強さ(1-127)
 //   }]
 // }
@@ -60,6 +61,7 @@ export function createSong({ title = '無題', bpm = 120, source = '', tracks = 
       role: tr.role || 'other',
       isDrum: !!tr.isDrum,
       tone: tr.tone || defaultTone(tr.role, tr.isDrum),
+      program: Number.isInteger(tr.program) ? tr.program : null,
       notes,
     });
   }

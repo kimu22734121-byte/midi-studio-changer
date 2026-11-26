@@ -1,11 +1,14 @@
 // 再生エンジン：曲（Song）を Web Audio で鳴らす。
 // 音数の上限に合わせて鳴らす音を選び（planVoices）、少し先の音を予約しながら再生する。
 // 重くて音の予約が間に合わなくなったら、自動で音数を1段階減らす。
-import { planVoices, lowerBound, songDuration, lowerPolyphony, POLY_DEFAULT } from '../core/song.js';
-import { playTone, playDrum, isDrumKit } from './instruments.js';
+// 音は「軽い波形シンセ」か「サウンドフォントのセット」のどちらかで鳴らす。
+import { planVoices, lowerBound, songDuration, lowerPolyphony, POLY_DEFAULT, defaultTone } from '../core/song.js';
+import { toneFromProgram } from '../core/midi-file.js';
+import { playTone, playDrum, isDrumKit, TONES } from './instruments.js';
 
 const LOOKAHEAD = 0.2; // 秒
 const TICK_MS = 25;
+const FALLBACK_ROLES = { melody: 80, chords: 48, bass: 38, other: 0 };
 
 export class Player {
   constructor({ onEnd = () => {}, onAutoReduce = () => {} } = {}) {
@@ -13,7 +16,7 @@ export class Player {
     this.onAutoReduce = onAutoReduce;
     this.ctx = null;
     this.song = null;
-    this.settings = []; // トラックごと { tone, muted, volume }
+    this.settings = []; // トラックごと { tone, program, preset, muted, volume }
     this.polyphony = POLY_DEFAULT;
     this.autoReduce = true;
     this.events = [];
@@ -24,21 +27,43 @@ export class Player {
     this.trackGains = [];
     this.duration = 0;
     this.lag = { late: 0, gaps: 0, since: 0, cooldown: 0 };
+    this.set = { id: 'wave', builtin: true };
+    this.bank = null;
   }
 
   async ensureContext() {
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       this.ctx = new AC({ latencyHint: 'interactive' });
-      this.master = this.ctx.createGain();
-      this.master.gain.value = 0.9;
-      const comp = this.ctx.createDynamicsCompressor();
+      const ctx = this.ctx;
+      this.master = ctx.createGain();
+      const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -12;
       comp.ratio.value = 4;
-      this.master.connect(comp).connect(this.ctx.destination);
+      this.master.connect(comp).connect(ctx.destination);
+      // スーファミ風のやまびこ（エコー）
+      this.echoIn = ctx.createGain();
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = 0.24;
+      const fb = ctx.createGain();
+      fb.gain.value = 0.38;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2800;
+      this.echoWet = ctx.createGain();
+      this.echoIn.connect(delay).connect(lp).connect(fb).connect(delay);
+      lp.connect(this.echoWet).connect(comp);
+      this.master.connect(this.echoIn);
+      this.applySetMix();
       this.buildTrackGains();
     }
     if (this.ctx.state !== 'running') await this.ctx.resume();
+  }
+
+  applySetMix() {
+    if (!this.ctx) return;
+    this.master.gain.value = 0.9 * (this.set.gain || 1);
+    this.echoWet.gain.value = this.set.echo ? 0.32 : 0;
   }
 
   buildTrackGains() {
@@ -60,10 +85,59 @@ export class Player {
   setSong(song) {
     this.stop();
     this.song = song;
-    this.settings = song.tracks.map((t) => ({ tone: t.tone, muted: false, volume: 1 }));
+    this.settings = song.tracks.map(() => ({ tone: null, program: 0, preset: null, muted: false, volume: 1 }));
+    this.assignInstruments();
     this.duration = songDuration(song);
     this.buildTrackGains();
     this.replan();
+  }
+
+  /** セットを変えたとき・曲を読み込んだときに、パートごとの楽器を決め直す */
+  assignInstruments() {
+    if (!this.song) return;
+    const roles = this.set.roles || FALLBACK_ROLES;
+    this.song.tracks.forEach((tr, i) => {
+      const st = this.settings[i];
+      st.tone = tr.tone || defaultTone(tr.role, tr.isDrum);
+      st.program = tr.isDrum ? (tr.program ?? 0) : (tr.program ?? roles[tr.role] ?? 0);
+      st.preset = this.bank ? this.bank.preset(st.program, tr.isDrum) : null;
+    });
+  }
+
+  /** サウンドフォントのセットを切り替える（bank が null なら波形シンセ） */
+  setSoundSet(set, bank) {
+    const was = this.playing;
+    if (was) this.pause();
+    this.set = set;
+    this.bank = bank;
+    this.applySetMix();
+    this.assignInstruments();
+    if (was) this.play();
+  }
+
+  /** 今のセットで選べる楽器の一覧 */
+  instrumentChoices(i) {
+    const tr = this.song.tracks[i];
+    if (!this.bank) return null;
+    return this.bank.presets(tr.isDrum);
+  }
+
+  /** パートの楽器を変える（波形シンセなら音色ID、サウンドフォントなら番号） */
+  setInstrument(i, value) {
+    const st = this.settings[i];
+    const tr = this.song.tracks[i];
+    if (this.bank) {
+      st.program = Number(value);
+      st.preset = this.bank.preset(st.program, tr.isDrum);
+    } else st.tone = value;
+  }
+
+  /** MIDI保存用：トラックのGM楽器番号 */
+  programOf(i) {
+    const st = this.settings[i];
+    if (this.bank) return st.preset?.bank === 0 ? st.preset.program : st.program;
+    if (this.song.tracks[i].program !== null && st.tone === toneFromProgram(this.song.tracks[i].program)) return this.song.tracks[i].program;
+    return TONES[st.tone]?.gm ?? 0;
   }
 
   replan() {
@@ -77,8 +151,6 @@ export class Player {
     this.polyphony = n;
     this.replan();
   }
-
-  setTone(i, tone) { this.settings[i].tone = tone; }
 
   setMuted(i, muted) {
     this.settings[i].muted = muted;
@@ -137,6 +209,17 @@ export class Player {
     this.voices = [];
   }
 
+  /** 1音鳴らす（テスト・試し聴き用にも使う） */
+  noteOn(track, { when, dur, pitch, vel }) {
+    const st = this.settings[track];
+    const dest = this.trackGains[track];
+    if (this.bank && st.preset) return this.bank.noteOn(this.ctx, dest, st.preset, { when, dur, pitch, vel, channel: track });
+    if (this.bank) return null;
+    return isDrumKit(st.tone)
+      ? playDrum(this.ctx, dest, st.tone, { when, pitch, vel })
+      : playTone(this.ctx, dest, st.tone, { when, dur, pitch, vel });
+  }
+
   tick() {
     if (!this.playing) return;
     const ctx = this.ctx;
@@ -154,13 +237,8 @@ export class Player {
       if (at > horizon) break;
       this.ptr++;
       if (at < now - 0.05) { if (!hidden) this.lag.late++; continue; }
-      const st = this.settings[ev.track];
-      const dest = this.trackGains[ev.track];
-      const when = Math.max(at, now);
-      const v = isDrumKit(st.tone)
-        ? playDrum(ctx, dest, st.tone, { when, pitch: ev.p, vel: ev.v })
-        : playTone(ctx, dest, st.tone, { when, dur: ev.d, pitch: ev.p, vel: ev.v });
-      this.voices.push(v);
+      const v = this.noteOn(ev.track, { when: Math.max(at, now), dur: ev.d, pitch: ev.p, vel: ev.v });
+      if (v) this.voices.push(v);
     }
     if (this.voices.length > 256) this.voices = this.voices.filter((v) => v.end > now);
 

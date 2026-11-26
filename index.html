@@ -118,9 +118,9 @@
       </div>
       <div class="presets">
         <button class="btn preset" data-preset="famicom">👾 ファミコン風<small>4音・ピコピコ</small></button>
-        <button class="btn preset" data-preset="sfc">🕹️ スーファミ風<small>16音</small></button>
-        <button class="btn preset" data-preset="rich">✨ リッチ<small>64音・シンセ</small></button>
-        <button class="btn preset" data-preset="original">↩️ 最初の音色<small>64音</small></button>
+        <button class="btn preset" data-preset="sfc">🕹️ スーファミ風<small>16音・エコー</small></button>
+        <button class="btn preset" data-preset="rich">✨ リッチ<small>64音・本物っぽい楽器</small></button>
+        <button class="btn preset" data-preset="original">⚡ 軽い波形<small>64音・最初の音</small></button>
       </div>
       <label class="check"><input type="checkbox" id="auto-reduce" checked> 重くて音がとぎれたら、自動で音の数を減らす</label>
     </section>
@@ -128,7 +128,16 @@
     <!-- ④ 音色 -->
     <section class="card needs-song" id="tone-card" hidden>
       <h2><span class="num">4</span>楽器の音色</h2>
-      <p>パートごとに音色を選べます。🔇 を押すとそのパートを消せます。</p>
+      <h3 class="sub">音のセットを選ぶ</h3>
+      <p>セットを変えると、曲全体の雰囲気がまとめて変わります。</p>
+      <div id="set-list" class="set-list" role="radiogroup" aria-label="音のセット"></div>
+      <div id="set-status" class="set-status" hidden>
+        <div class="progress"><div id="set-progress"></div></div>
+        <p id="set-status-text"></p>
+      </div>
+      <label class="btn small file-btn">📂 自分のサウンドフォント（.sf2）を読み込む<input type="file" id="sf2-file" accept=".sf2,audio/x-soundfont"></label>
+      <h3 class="sub">パートごとの楽器</h3>
+      <p>パートごとに楽器を選べます。🔇 を押すとそのパートを消せます。</p>
       <div id="track-list" class="track-list"></div>
     </section>
 
