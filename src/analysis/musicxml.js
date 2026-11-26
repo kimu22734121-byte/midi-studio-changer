@@ -116,6 +116,7 @@ export function parseMusicXml(text, fallbackTitle = 'MusicXML') {
       isDrum: drum,
       role: drum ? 'drums' : 'other',
       tone: drum ? defaultTone('drums', true) : toneFromProgram(info.program),
+      program: Math.max(0, Math.min(127, info.program)),
       notes,
       avg: notes.reduce((s, n) => s + n.p, 0) / notes.length,
     });

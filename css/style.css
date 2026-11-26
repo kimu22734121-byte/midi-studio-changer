@@ -129,6 +129,20 @@ input[type="range"] { accent-color: var(--accent); height: 32px; }
 .check { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: 0.92rem; }
 .check input { width: 20px; height: 20px; accent-color: var(--accent); }
 
+.sub { font-size: 1rem; margin: 14px 0 4px; }
+.set-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0; }
+@media (min-width: 560px) { .set-list { grid-template-columns: repeat(3, 1fr); } }
+.set-btn {
+  appearance: none; text-align: left; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  border-radius: 12px; padding: 10px; font: inherit; cursor: pointer; display: flex; flex-direction: column; gap: 2px; min-height: 44px;
+}
+.set-btn .t { font-weight: 700; }
+.set-btn .d { font-size: 0.78rem; color: var(--muted); line-height: 1.4; }
+.set-btn .s { font-size: 0.74rem; color: var(--muted); }
+.set-btn[aria-checked="true"] { border: 2px solid var(--accent); background: var(--accent-soft); padding: 9px; }
+.set-btn:disabled { opacity: 0.6; cursor: progress; }
+.set-status { margin: 6px 0 10px; font-size: 0.9rem; }
+.set-status.error p { color: var(--danger); font-weight: 600; }
 .track-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
 .track { display: grid; grid-template-columns: 6px 1fr auto; gap: 4px 10px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; }
 .track .bar { grid-row: span 2; align-self: stretch; border-radius: 3px; }

@@ -108,6 +108,7 @@ export function parseMidi(arrayBuffer, title = 'MIDI') {
       isDrum,
       role: isDrum ? 'drums' : 'other',
       tone: isDrum ? 'kit-synth' : toneFromProgram(g.program),
+      program: g.program,
       notes: g.notes,
       avg: g.notes.reduce((s, n) => s + n.p, 0) / g.notes.length,
     });
