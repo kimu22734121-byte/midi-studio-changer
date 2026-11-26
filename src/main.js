@@ -82,9 +82,14 @@ async function run(task) {
 const baseName = (name) => name.replace(/\.[^.]+$/, '');
 
 // ---------- 取り込み ----------
-async function importAudioBuffer(buf, title, source) {
-  showStatus('曲を読み込んでいます…', 0.02);
-  const { samples, sampleRate, duration } = await decodeToMono(buf, ANALYSIS_SR);
+async function importAudioBuffer(buf, title, source, isVideo = false) {
+  showStatus(isVideo ? '動画から音を取り出しています…' : '曲を読み込んでいます…', 0.02);
+  const { samples, sampleRate, duration, silent } = await decodeToMono(buf, ANALYSIS_SR);
+  if (silent) {
+    throw new Error(isVideo
+      ? '動画に音が入っていませんでした。配信サービス（Apple Music など）の曲は、画面収録すると音が消えるため取り込めません。'
+      : '音がほとんど入っていないようです');
+  }
   if (duration > 8 * 60) toast('長い曲なので、最初の8分だけ変換します');
   const s = await analyzeAudio(samples, sampleRate, {
     title, source,
@@ -97,7 +102,14 @@ async function importAudioBuffer(buf, title, source) {
 $('#audio-file').addEventListener('change', (e) => {
   const f = e.target.files[0];
   e.target.value = '';
-  if (f) run(async () => importAudioBuffer(await f.arrayBuffer(), baseName(f.name), 'audio'));
+  if (!f) return;
+  const isVideo = f.type.startsWith('video/') || /\.(mp4|mov|m4v|webm)$/i.test(f.name);
+  // 長い画面収録は数百MBになり、スマホだと読み込めないことがある
+  if (f.size > 400 * 1024 * 1024) {
+    showStatus('ファイルが大きすぎます（400MBまで）。「写真」アプリで前後をカットして短くしてから選んでください。', null, true);
+    return;
+  }
+  run(async () => importAudioBuffer(await f.arrayBuffer(), baseName(f.name), 'audio', isVideo));
 });
 
 $('#midi-file').addEventListener('change', (e) => {

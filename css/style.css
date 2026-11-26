@@ -84,6 +84,10 @@ textarea {
 }
 textarea:disabled { opacity: 0.6; }
 
+.howto { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 0.92rem; }
+.howto summary { cursor: pointer; font-weight: 600; min-height: 32px; display: list-item; }
+.howto ol { margin: 8px 0; padding-left: 1.4em; }
+.howto li { padding: 2px 0; }
 .tips { margin: 6px 0; padding-left: 0; list-style: none; font-size: 0.92rem; }
 .tips li { padding: 3px 0; }
 .rec-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }

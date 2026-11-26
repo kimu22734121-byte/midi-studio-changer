@@ -20,7 +20,7 @@
     <section class="card" id="import-card">
       <h2><span class="num">1</span>曲を入れる</h2>
       <div class="tabs" role="tablist">
-        <button role="tab" data-tab="audio" aria-selected="true">🎵 音楽ファイル</button>
+        <button role="tab" data-tab="audio" aria-selected="true">🎵 音楽・動画ファイル</button>
         <button role="tab" data-tab="midi">🎹 MIDI</button>
         <button role="tab" data-tab="mic">🎤 マイク録音</button>
         <button role="tab" data-tab="text">📝 楽譜を貼る</button>
@@ -28,9 +28,21 @@
       </div>
 
       <div class="panel" data-panel="audio">
-        <p>スマホやパソコンに保存してある曲（MP3・WAV・M4A など）を選んでください。曲を聴き取って、メロディ・伴奏・ドラムの打ち込みに作り直します。</p>
+        <p>スマホやパソコンに保存してある曲（MP3・WAV・M4A など）や、動画（MP4・MOV）を選んでください。曲を聴き取って、メロディ・伴奏・ドラムの打ち込みに作り直します。動画は音だけを使います。</p>
         <p class="hint">歌とメロディがはっきりした曲ほどうまくいきます。音がぎっしり詰まった曲は崩れやすいです。元の曲そのままではなく「打ち込み風の別バージョン」になります。</p>
-        <label class="btn primary file-btn">曲のファイルを選ぶ<input type="file" id="audio-file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac"></label>
+        <label class="btn primary file-btn">曲・動画のファイルを選ぶ<input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mov,.m4v,.webm"></label>
+        <details class="howto">
+          <summary>📱 iPhoneで鳴っている音を取り込みたいときは（画面収録）</summary>
+          <ol>
+            <li>はじめてのときだけ：「設定」→「コントロールセンター」に「画面収録」を追加します</li>
+            <li>コントロールセンターを開いて ⏺（画面収録）を押します。3秒後に録画が始まります（マイクはオフのままでOK）</li>
+            <li>取り込みたい曲を流します（20秒〜1分くらいがおすすめ）</li>
+            <li>画面上の赤い表示をタップして録画を止めると、「写真」に保存されます</li>
+            <li>「写真」アプリの編集で、前後のいらない部分を切っておくと、早くきれいに変換できます</li>
+            <li>上の「曲・動画のファイルを選ぶ」→「写真ライブラリ」から、その動画を選びます</li>
+          </ol>
+          <p class="hint">Apple Music・Spotify などの配信サービスの曲は、著作権を守るしくみで画面収録しても音が消えるため、取り込めません。</p>
+        </details>
       </div>
 
       <div class="panel" data-panel="midi" hidden>

@@ -6,7 +6,7 @@ export async function decodeToMono(arrayBuffer, targetRate) {
   try {
     buf = await tmp.decodeAudioData(arrayBuffer.slice(0));
   } catch {
-    throw new Error('この音楽ファイルは読み込めませんでした（MP3・WAV・M4A などを試してください）');
+    throw new Error('このファイルから音を読み込めませんでした（MP3・WAV・M4A、またはiPhoneの画面収録の動画を試してください）');
   } finally {
     tmp.close?.();
   }
@@ -17,5 +17,8 @@ export async function decodeToMono(arrayBuffer, targetRate) {
   src.connect(off.destination); // 複数チャンネルは自動で1つにまとめられる
   src.start();
   const out = await off.startRendering();
-  return { samples: out.getChannelData(0).slice(), sampleRate: targetRate, duration: buf.duration };
+  const samples = out.getChannelData(0).slice();
+  let peak = 0;
+  for (let i = 0; i < samples.length; i += 16) peak = Math.max(peak, Math.abs(samples[i]));
+  return { samples, sampleRate: targetRate, duration: buf.duration, silent: peak < 1e-3 };
 }
