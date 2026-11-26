@@ -269,7 +269,7 @@ function renderSets() {
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(set.id === currentSetId));
     b.disabled = loadingSet;
-    const size = set.builtin ? '読み込みなし' : set.user ? 'この端末のファイル' : `約${set.size}MB${set.size > 10 ? '（Wi-Fi推奨）' : ''}`;
+    const size = set.builtin ? '読み込みなし' : set.user ? 'この端末のファイル' : `約${set.size}MB${set.shared ? `（${set.shared}）` : set.size > 10 ? '（Wi-Fi推奨）' : ''}`;
     b.innerHTML = `<span class="t">${set.icon} ${esc(set.label)}</span><span class="d">${esc(set.desc)}</span><span class="s">${size}</span>`;
     b.addEventListener('click', () => chooseSet(set.id));
     box.appendChild(b);

@@ -167,7 +167,8 @@ function makeRegion(g, s, kr, vr) {
 export function findPreset(sf, program, isDrum) {
   const bank = isDrum ? 128 : 0;
   const list = sf.presets.filter((p) => p.bank === bank);
-  const pool = list.length ? list : sf.presets.filter((p) => (isDrum ? p.bank === 128 : p.bank !== 128));
+  const pool = list.length ? list : sf.presets.filter((p) => p.bank !== 128);
+  if (isDrum && !list.length) return null; // ドラムが入っていないセットでは鳴らさない
   if (!pool.length) return sf.presets[0] || null;
   const exact = pool.find((p) => p.program === program);
   if (exact) return exact;

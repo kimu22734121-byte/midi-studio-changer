@@ -33,7 +33,7 @@ test('SF2を書き出して読み戻せる', () => {
 });
 
 test('同梱のアプリ独自セットが読める・楽器を番号で探せる', () => {
-  for (const name of ['chip', 'synth', 'toy']) {
+  for (const name of ['chip', 'synth']) {
     const sf = parseSf2(readFileSync(new URL(`../soundfonts/midichen-${name}.sf2`, import.meta.url)));
     assert.ok(sf.presets.filter((p) => p.bank === 0).length >= 15, name);
     assert.ok(findPreset(sf, 0, true).bank === 128, `${name} drums`);
@@ -55,3 +55,20 @@ test('標準セット（GeneralUser GS）が読める', { skip: !existsSync(new 
   assert.equal(findPreset(sf, 0, false).program, 0);
   assert.ok(findPreset(sf, 0, true).regions.some((r) => r.keyLo <= 36 && r.keyHi >= 36));
 });
+
+for (const [name, programs] of [['orchestra', [0, 40, 46, 48, 56, 60, 73]], ['jazz', [0, 32]]]) {
+  const url = new URL(`../soundfonts/midichen-${name}.sf2`, import.meta.url);
+  test(`録音サンプルのセット（${name}）が読める`, { skip: !existsSync(url) }, () => {
+    const sf = parseSf2(readFileSync(url));
+    for (const prog of programs) {
+      const p = findPreset(sf, prog, false);
+      assert.equal(p.program, prog, `${name} ${prog}`);
+      assert.ok(p.regions.length > 0);
+      // 音のデータの範囲がファイルの中に収まっている
+      for (const r of p.regions) assert.ok(r.start >= 0 && r.end <= sf.pcm.length && r.end > r.start);
+    }
+    const kit = findPreset(sf, 0, true);
+    assert.ok(kit && kit.bank === 128, `${name} kit`);
+    for (const key of [36, 38, 42, 49]) assert.ok(kit.regions.some((r) => key >= r.keyLo && key <= r.keyHi), `${name} kit ${key}`);
+  });
+}

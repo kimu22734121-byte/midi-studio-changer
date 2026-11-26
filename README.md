@@ -19,12 +19,14 @@
 - **音のセット（サウンドフォント）**：曲全体の雰囲気をまとめて切り替え。パートごとに楽器も選べます
   | セット | 中身 | 大きさ |
   |---|---|---|
-  | ⚡ 軽い波形シンセ | 矩形波・三角波・ノイズなどのピコピコ音とシンセ（17種類＋ドラム2種類） | 読み込みなし |
+  | ⚡ 軽い波形シンセ | 左右に広がる厚めのシンセ・ピコピコ音（21種類＋ドラム2種類） | 読み込みなし |
+  | 🎻 オーケストラ（豪華） | 本物の弦・金管・木管・ハープ・ティンパニ・打楽器を録音した音（VSCO-2-CE）＋ホールの響き | 約33MB |
+  | 🎷 ジャズ・ピアノトリオ（豪華） | コンサートグランドピアノ（Salamander）・ウッドベース・ジャズドラムを録音した音 | 約27MB |
   | 🎹 標準 | ピアノ・ストリングス・ギター・ドラムなど128種類＋ドラム13種類（GeneralUser GS） | 約32MB |
+  | 🌌 シンセ | FMエレピ・スーパーソー・アナログベースなど（アプリ独自） | 約3MB |
+  | 🚀 宇宙（アンビエント） | 広がるパッドと長い響き・やまびこ | シンセと共通 |
   | 🕹️ スーファミ風 | 標準の音を粗くして、やまびこ（エコー）をかけた音 | 標準と共通 |
   | 👾 ファミコン風 | 矩形波・三角波・ノイズ（アプリ独自） | 約0.7MB |
-  | 🌌 シンセ | FMエレピ・スーパーソー・宇宙パッドなど（アプリ独自） | 約3MB |
-  | 🧸 おもちゃ箱 | オルゴール・トイピアノ・木琴・ウクレレなど（アプリ独自） | 約5MB |
   | 📂 自分の .sf2 | 端末にあるサウンドフォントを読み込んで使えます | — |
 
   大きいセットは選んだときに初めてダウンロードし、端末に保存するので2回目からは通信しません。
@@ -55,7 +57,18 @@ python3 -m http.server 8000
   - 音楽制作（個人・商用とも）に制限なく使え、ソフトウェアへの組み込み・改変も認められています。
     配布するときは作者のダウンロードURLに直接リンクせず、自分で持っているコピーを置くこと、とされています（このリポジトリはそうしています）。
   - ライセンス全文：[soundfonts/GeneralUser-GS-LICENSE.txt](soundfonts/GeneralUser-GS-LICENSE.txt)
-- **アプリ独自セット**（`soundfonts/midichen-chip.sf2` / `midichen-synth.sf2` / `midichen-toy.sf2`）
+- **オーケストラ**（`soundfonts/midichen-orchestra.sf2`）
+  - 元の録音：VS Chamber Orchestra 2: Community Edition（Versilian Studios）— https://github.com/sgossner/VSCO-2-CE
+  - CC0 1.0（パブリックドメイン）。このアプリ用に音を選んで軽くしたものも CC0 です。
+- **ジャズ・ピアノトリオ**（`soundfonts/midichen-jazz.sf2`）
+  - ピアノ：**Salamander Grand Piano V3 — Alexander Holm**（CC-BY 3.0）https://archive.org/details/SalamanderGrandPianoV3
+    （SFZ版：https://github.com/sfzinstruments/SalamanderGrandPiano）。使うときは作者名の表示が必要です。
+    このアプリでは音を選んでモノラル・短くするなど加工しています。
+  - ウッドベース：VSCO-2-CE（CC0）
+  - ドラム：Virtuosity Drums（CC0）— https://github.com/sfzinstruments/virtuosity_drums
+  - このセットの音で作った曲をゲームなどで使うときは、「Piano: Salamander Grand Piano by Alexander Holm (CC-BY 3.0)」とクレジットを書いてください。
+- オーケストラ・ジャズのセットは `tools/build-sample-soundfonts.mjs` で元の録音から作り直せます（git・ffmpeg が必要）。
+- **アプリ独自セット**（`soundfonts/midichen-chip.sf2` / `midichen-synth.sf2`）
   - すべてプログラムで合成した音です（`tools/make-soundfonts.mjs` で作り直せます）。
   - CC0 1.0（パブリックドメイン）：商用・再配布・改変を含め、自由に使えます。ゲームのBGM用の音源としてもそのまま使えます。
 - 波形シンセの音：プログラムで作った音（外部の音源ファイルは使っていません）

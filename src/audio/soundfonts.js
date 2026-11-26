@@ -3,36 +3,49 @@
 import { parseSf2 } from './sf2.js';
 import { SoundFontBank } from './sf-bank.js';
 
+// roles：音声や楽譜テキストから作った曲（元の楽器が決まっていない曲）で、パートごとに使う楽器の番号
+// fx：響き（reverb）・コーラス（chorus）・やまびこ（echo）の量
+// gain：セットごとの音量の差をそろえるための倍率
 export const SETS = [
-  // roles：音声や楽譜テキストから作った曲（元の楽器が決まっていない曲）で、パートごとに使う楽器の番号
   {
-    id: 'wave', icon: '⚡', label: '軽い波形シンセ', desc: '読み込みなし・いちばん軽い。ピコピコ〜シンセの基本の音',
-    builtin: true,
+    id: 'wave', icon: '⚡', label: '軽い波形シンセ', desc: '読み込みなし・いちばん軽い。左右に広がる厚めのシンセとピコピコ音',
+    builtin: true, gain: 0.85, fx: { chorus: 0.3, reverb: { wet: 0.16, time: 1.8 } },
   },
   {
-    id: 'gm', icon: '🎹', label: '標準（いろいろな楽器）', desc: 'ピアノ・ストリングス・ギター・ドラムなど本物に近い音。128種類',
-    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.75,
-    roles: { melody: 80, chords: 48, bass: 38, other: 0 },
+    id: 'orchestra', icon: '🎻', label: 'オーケストラ（豪華）', desc: '本物の弦・金管・木管・ハープ・ティンパニを録音した音。ホールの響き付き',
+    file: 'soundfonts/midichen-orchestra.sf2', size: 33.4, gain: 1.43,
+    roles: { melody: 40, chords: 48, bass: 32, other: 46 }, fx: { reverb: { wet: 0.42, time: 3.2 } },
   },
   {
-    id: 'sfc', icon: '🕹️', label: 'スーファミ風', desc: '標準の音をざらっと粗くして、やまびこ（エコー）をかけた懐かしい音。標準と同じファイルなので追加のダウンロードなし',
-    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, lofi: true, echo: true, gain: 1.1,
-    roles: { melody: 73, chords: 48, bass: 33, other: 46 },
+    id: 'jazz', icon: '🎷', label: 'ジャズ・ピアノトリオ（豪華）', desc: 'コンサート用グランドピアノ・ウッドベース・ジャズドラムを録音した音',
+    file: 'soundfonts/midichen-jazz.sf2', size: 27.3, gain: 1.88,
+    roles: { melody: 0, chords: 0, bass: 32, other: 0 }, fx: { reverb: { wet: 0.24, time: 2.0 } },
+  },
+  {
+    id: 'gm', icon: '🎹', label: '標準（いろいろな楽器）', desc: 'ピアノ・ギター・ストリングス・ドラムなど128種類。どんな曲にも合う',
+    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.85,
+    roles: { melody: 80, chords: 48, bass: 38, other: 0 }, fx: { reverb: { wet: 0.2, time: 1.8 } },
+  },
+  {
+    id: 'synth', icon: '🌌', label: 'シンセ', desc: 'スーパーソー・FMエレピ・アナログベースなど、キラキラした電子音',
+    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.69,
+    roles: { melody: 81, chords: 48, bass: 32, other: 4 }, fx: { chorus: 0.35, reverb: { wet: 0.22, time: 2.2 } },
+  },
+  {
+    id: 'space', icon: '🚀', label: '宇宙（アンビエント）', desc: '広がるパッドと長い響き・やまびこで、宇宙をただようような音',
+    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.4, labels: 'synth', shared: 'シンセと共通',
+    roles: { melody: 82, chords: 91, bass: 33, other: 96 },
+    fx: { chorus: 0.3, reverb: { wet: 0.55, time: 5.5 }, echo: { time: 0.42, feedback: 0.42, wet: 0.22 } },
+  },
+  {
+    id: 'sfc', icon: '🕹️', label: 'スーファミ風', desc: '標準の音をざらっと粗くして、やまびこ（エコー）をかけた懐かしい音',
+    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, lofi: true, gain: 1.2, labels: 'gm', shared: '標準と共通',
+    roles: { melody: 73, chords: 48, bass: 33, other: 46 }, fx: { echo: { time: 0.24, feedback: 0.38, wet: 0.32 } },
   },
   {
     id: 'chip', icon: '👾', label: 'ファミコン風', desc: '矩形波・三角波・ノイズのピコピコ音（アプリ独自）',
-    file: 'soundfonts/midichen-chip.sf2', size: 0.7, gain: 0.45,
+    file: 'soundfonts/midichen-chip.sf2', size: 0.7, gain: 0.47,
     roles: { melody: 80, chords: 81, bass: 32, other: 0 },
-  },
-  {
-    id: 'synth', icon: '🌌', label: 'シンセ', desc: 'キラキラした電子音・パッド・アナログベース（アプリ独自）',
-    file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.65,
-    roles: { melody: 81, chords: 88, bass: 32, other: 4 },
-  },
-  {
-    id: 'toy', icon: '🧸', label: 'おもちゃ箱', desc: 'オルゴール・トイピアノ・木琴・ウクレレ（アプリ独自）',
-    file: 'soundfonts/midichen-toy.sf2', size: 5.0, gain: 0.62,
-    roles: { melody: 10, chords: 0, bass: 32, other: 24 },
   },
 ];
 
@@ -68,20 +81,22 @@ const LABELS = {
     40: 'シンセストリングス', 48: 'スーパーソー', 56: 'シンセブラス', 80: '矩形波リード', 81: 'のこぎり波リード', 82: 'やわらかリード',
     88: 'ドリームパッド', 89: 'ウォームパッド', 91: '宇宙パッド', 96: '宇宙きらきら',
   },
-  toy: {
-    0: 'トイピアノ', 9: 'グロッケン', 10: 'オルゴール', 12: 'マリンバ', 13: '木琴', 16: '鍵盤ハーモニカ', 21: 'アコーディオン', 22: 'ハーモニカ',
-    24: 'ウクレレ', 32: 'おもちゃベース', 46: 'ハープ', 56: 'おもちゃラッパ', 74: 'リコーダー', 78: '口笛', 80: 'おもちゃピコピコ',
+  orchestra: {
+    0: 'アップライトピアノ', 32: 'ピチカートベース', 40: 'バイオリン（ソロ）', 43: 'コントラバス', 44: 'トレモロの弦', 45: 'ピチカートの弦',
+    48: 'オーケストラの弦（合奏）', 49: 'ゆったりした弦', 61: '金管合奏', 19: '教会オルガン',
   },
+  jazz: { 0: 'グランドピアノ', 1: 'グランドピアノ（明るめ）', 32: 'ウッドベース' },
 };
-const KIT_LABELS = { chip: 'ファミコンドラム', synth: '電子ドラム', toy: 'おもちゃドラム' };
+const KIT_LABELS = { chip: 'ファミコンドラム', synth: '電子ドラム', orchestra: 'オーケストラ打楽器', jazz: 'ジャズドラム' };
 const GM_KITS = {
   0: 'スタンダードドラム', 1: 'スタンダードドラム2', 8: 'ルームドラム', 16: 'パワードラム', 24: 'エレクトリックドラム', 25: 'TR-808風ドラム',
   26: 'ダンスドラム', 32: 'ジャズドラム', 40: 'ブラシドラム', 48: 'オーケストラ打楽器', 56: '効果音セット',
 };
 
 export function presetLabel(setId, preset) {
-  if (preset.bank === 128) return KIT_LABELS[setId] || GM_KITS[preset.program] || `ドラム：${preset.name}`;
-  return LABELS[setId]?.[preset.program] || GM_NAMES[preset.program] || preset.name;
+  const key = SETS.find((x) => x.id === setId)?.labels || setId;
+  if (preset.bank === 128) return KIT_LABELS[key] || GM_KITS[preset.program] || `ドラム：${preset.name}`;
+  return LABELS[key]?.[preset.program] || GM_NAMES[preset.program] || preset.name;
 }
 
 const parsed = new Map(); // file → parseSf2 の結果（スーファミ風と標準で共有）

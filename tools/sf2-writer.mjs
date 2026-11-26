@@ -86,6 +86,7 @@ export function writeSf2({ name, copyright = '', comment = '', presets }) {
       const g = z.gens || {};
       const add = (op, v) => { igen.u16(op); igen.i16(v); igenN++; };
       igen.u16(GEN.keyRange); igen.u8(z.keyLo ?? 0); igen.u8(z.keyHi ?? 127); igenN++;
+      if (z.velLo !== undefined) { igen.u16(GEN.velRange); igen.u8(z.velLo); igen.u8(z.velHi ?? 127); igenN++; }
       if (g.attack !== undefined) add(GEN.attack, tc(g.attack));
       if (g.hold !== undefined) add(GEN.hold, tc(g.hold));
       if (g.decay !== undefined) add(GEN.decay, tc(g.decay));
