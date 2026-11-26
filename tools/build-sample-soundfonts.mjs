@@ -7,7 +7,7 @@
 //       ドラム Virtuosity Drums（CC0） https://github.com/sfzinstruments/virtuosity_drums
 //
 // 使い方：
-//   node tools/build-sample-soundfonts.mjs <取得用フォルダ>
+//   node tools/build-sample-soundfonts.mjs <取得用フォルダ> [orchestra|jazz]
 //   （取得用フォルダに上の3つのリポジトリを git clone --filter=blob:none した vsco / sal / vd を置く）
 // 必要なもの：git, ffmpeg
 //
@@ -101,7 +101,7 @@ function parseSfz(text) {
 }
 
 /** VSCO の楽器（SFZ）からゾーンを作る。keyMin/keyMax で音域を切り出せる */
-function vscoZones(sfz, { keyMin = 0, keyMax = 127, layers = 1, maxLen = 3, loop = false, rate = 24000, gens = {}, trimStart = true }) {
+function vscoZones(sfz, { keyMin = 0, keyMax = 127, layers = 1, maxLen = 3, loop = false, rate = 22050, gens = {}, trimStart = true }) {
   const text = (() => { checkout('vsco', [sfz]); return readFileSync(join(EXT, 'vsco', sfz), 'latin1'); })();
   let regs = parseSfz(text).filter((r) => r.sample && (!r.seq_position || r.seq_position === '1') && (!r.lorand || Number(r.lorand) === 0));
   regs = regs.map((r) => ({
@@ -154,7 +154,7 @@ function realize(name, zones, attenuation = 0) {
 }
 
 const preset = (name, program, zones, bank = 0) => ({ name, program, bank, zones });
-const SUS = { loop: true, maxLen: 2.6, gens: { attack: 0.04, release: 0.5 } };
+const SUS = { loop: true, maxLen: 2.0, rate: 22050, gens: { attack: 0.04, release: 0.5 } };
 
 // ================= オーケストラ =================
 function orchestra() {
@@ -188,7 +188,7 @@ function orchestra() {
     ['CelloEnsPizz.sfz', { maxLen: 1.2, keyMax: 57 }],
     ['ViolinEnsPizz.sfz', { maxLen: 1.0, keyMin: 58 }],
   ]);
-  add('Harp', 46, [['Harp.sfz', { maxLen: 2.5, gens: { release: 0.8 } }]]);
+  add('Harp', 46, [['Harp.sfz', { maxLen: 2.2, gens: { release: 0.8 } }]]);
   add('Timpani', 47, [['Timpani.sfz', { maxLen: 2.5, gens: { release: 1 } }]]);
   add('Trumpet', 56, [['TrumpetSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
   add('Trombone', 57, [['TromboneSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
@@ -205,15 +205,15 @@ function orchestra() {
   add('Clarinet', 71, [['ClarinetSus.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
   add('Piccolo', 72, [['PiccoloSus.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
   add('Flute', 73, [['FluteSusVib.sfz', { ...SUS, gens: { attack: 0.04, release: 0.3 } }]]);
-  add('Glockenspiel', 9, [['Glockenspiel.sfz', { maxLen: 2.5, rate: 32000, gens: { release: 1 } }]]);
+  add('Glockenspiel', 9, [['Glockenspiel.sfz', { maxLen: 2.0, rate: 32000, gens: { release: 1 } }]]);
   add('Marimba', 12, [['Marimba.sfz', { maxLen: 1.5, gens: { release: 0.5 } }]]);
   add('Xylophone', 13, [['Xylophone.sfz', { maxLen: 1.0, rate: 32000, gens: { release: 0.3 } }]]);
   add('Tubular Bells', 14, [['TubularBells.sfz', { maxLen: 3, gens: { release: 1.5 } }]]);
   add('Church Organ', 19, [['OrganLoud.sfz', { ...SUS, gens: { attack: 0.05, release: 0.4 } }]]);
-  add('Upright Piano', 0, [['UprightPiano.sfz', { maxLen: 3.5, layers: 2, rate: 32000, gens: { release: 0.4 } }]]);
-  add('Pizz Bass', 32, [['ContrabassPizz.sfz', { maxLen: 1.6, layers: 2, gens: { release: 0.3 } }]]);
+  add('Upright Piano', 0, [['UprightPiano.sfz', { maxLen: 3.0, layers: 1, rate: 24000, gens: { release: 0.4 } }]]);
+  add('Pizz Bass', 32, [['ContrabassPizz.sfz', { maxLen: 1.4, layers: 1, gens: { release: 0.3 } }]]);
   // 打楽器（GM配置）：大太鼓・スネア・シンバル・ティンパニなど
-  const kitZones = vscoZones('GM-StylePerc.sfz', { maxLen: 2.5, rate: 32000, trimStart: false, gens: { release: 1.5 } })
+  const kitZones = vscoZones('GM-StylePerc.sfz', { maxLen: 1.8, rate: 24000, trimStart: false, gens: { release: 1.5 } })
     .map((z) => ({ ...z, center: z.keyLo === z.keyHi ? z.keyLo : z.center }));
   P.push(preset('Orchestra Perc', 0, realize('perc', kitZones), 128));
   console.log('   kit', kitZones.length, 'zones');
@@ -255,16 +255,16 @@ function jazz() {
   const kit = [
     // [GMキー, ファイル, 強さの範囲, 長さ]
     [[35, 36], D('kick_snon', 2), [0, 90], 0.9], [[35, 36], D('kick_snon', 4), [91, 127], 0.9],
-    [37, D('snare_crossstick', 2), [0, 127], 0.5],
-    [[38, 38], D('snare_center', 3), [0, 90], 1.0], [[38, 38], D('snare_center', 6), [91, 127], 1.0],
-    [39, D('snare_rimshot', 2), [0, 127], 0.8],
-    [40, D('snare_offcenter', 5), [0, 127], 1.0],
+    [37, D('snare_crossstick', 10, ''), [0, 127], 0.5],
+    [[38, 38], D('snare_center', 16, ''), [0, 90], 1.0], [[38, 38], D('snare_center', 30, ''), [91, 127], 1.0],
+    [39, D('snare_rimshot', 8, ''), [0, 127], 0.8],
+    [40, D('snare_offcenter', 24, ''), [0, 127], 1.0],
     [42, D('hh_closed', 2), [0, 127], 0.5, 1], [44, D('hh_pedal', 2), [0, 127], 0.6, 1], [46, D('hh_open', 2), [0, 127], 1.8, 1],
     [[41, 43], D('ltom_center', 8, ''), [0, 127], 1.4], [[45, 47], D('ltom_center', 8, ''), [0, 127], 1.4],
     [[48, 50], D('htom_center', 8, ''), [0, 127], 1.2],
     [[49, 49], D('crash_crash', 2), [0, 127], 3.0], [57, D('crash_crash', 3), [0, 127], 3.0], [52, D('crash_sizzle', 2), [0, 127], 3.0],
     [[51, 51], D('ride_ride', 2), [0, 127], 2.5], [59, D('ride_ride', 3), [0, 127], 2.5], [53, D('ride_bell', 2), [0, 127], 2.5],
-    [55, D('flatride_crash', 1), [0, 127], 2.5],
+    [55, D('flatride_crash', 3, ''), [0, 127], 2.5],
   ];
   checkout('vd', kit.map((k) => k[1]));
   const kz = kit.map(([keys, file, [vlo, vhi], maxLen, excl]) => {
@@ -283,7 +283,9 @@ function jazz() {
   });
 }
 
+const only = process.argv[3]; // 例：jazz
 for (const [file, fn] of [['midichen-orchestra.sf2', orchestra], ['midichen-jazz.sf2', jazz]]) {
+  if (only && !file.includes(only)) continue;
   console.log(file);
   const bytes = fn();
   writeFileSync(new URL(file, OUT), bytes);
