@@ -405,3 +405,21 @@ $('#save-midi').addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast('MIDIファイルを保存しました');
 });
+
+// ---------- バージョン表示と「最新版にする」 ----------
+// 公開版では、ブラウザに古い画面が残っていても新しい版があれば知らせる
+(async () => {
+  const mine = document.querySelector('meta[name=app-version]')?.content || 'dev';
+  if (mine === 'dev') return;
+  $('#app-version').textContent = mine;
+  try {
+    const res = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const { version } = await res.json();
+    if (version && version !== mine) $('#update-banner').hidden = false;
+  } catch {}
+})();
+$('#update-btn').addEventListener('click', () => {
+  const u = new URL(location.href);
+  u.searchParams.set('v', Date.now());
+  location.replace(u.toString());
+});
