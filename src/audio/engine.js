@@ -94,7 +94,10 @@ export class Player {
       this.applySetMix();
       this.buildTrackGains();
     }
-    if (this.ctx.state !== 'running') await this.ctx.resume();
+    if (this.ctx.state !== 'running') {
+      // iPhone では resume が終わらないことがあるので、待ちすぎない
+      await Promise.race([this.ctx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 1500))]);
+    }
   }
 
   applySetMix() {
