@@ -1,14 +1,14 @@
 // 録音された本物の楽器の音（CC0 / CC-BY のサンプル集）から、軽いサウンドフォントを作るスクリプト。
 //
-//   - オーケストラ：VS Chamber Orchestra 2 Community Edition（CC0） https://github.com/sgossner/VSCO-2-CE
+//   （オーケストラは tools/build-orchestra.mjs で MuseScore の MS Basic から作る）
 //   - ジャズ・ピアノトリオ：
 //       ピアノ Salamander Grand Piano V3（CC-BY 3.0, Alexander Holm） https://github.com/sfzinstruments/SalamanderGrandPiano
 //       ウッドベース VSCO-2-CE（CC0）
 //       ドラム Virtuosity Drums（CC0） https://github.com/sfzinstruments/virtuosity_drums
 //
 // 使い方：
-//   node tools/build-sample-soundfonts.mjs <取得用フォルダ> [orchestra|jazz]
-//   （取得用フォルダに上の3つのリポジトリを git clone --filter=blob:none した vsco / sal / vd を置く）
+//   node tools/build-sample-soundfonts.mjs <取得用フォルダ>
+//   （取得用フォルダに上のリポジトリを git clone --filter=blob:none した vsco / sal / vd を置く）
 // 必要なもの：git, ffmpeg
 //
 // 容量を抑えるため：ラウンドロビンは1つだけ・強さの段階は少なめ・モノラル・長い音は切ってループにする。
@@ -156,75 +156,6 @@ function realize(name, zones, attenuation = 0) {
 const preset = (name, program, zones, bank = 0) => ({ name, program, bank, zones });
 const SUS = { loop: true, maxLen: 2.0, rate: 22050, gens: { attack: 0.04, release: 0.5 } };
 
-// ================= オーケストラ =================
-function orchestra() {
-  const P = [];
-  const add = (name, program, parts, att = 0) => {
-    const zones = parts.flatMap(([sfz, opt]) => vscoZones(sfz, opt));
-    P.push(preset(name, program, realize(name.replace(/\W/g, '').slice(0, 8), zones, att)));
-    console.log('  ', program, name, zones.length, 'zones');
-  };
-  const strings = (attack, rel) => ({ ...SUS, gens: { attack, release: rel } });
-  // 合奏の弦：低い音はチェロ、真ん中はビオラ、高い音はバイオリン
-  add('Orchestra Strings', 48, [
-    ['CelloEnsSusVib.sfz', { ...strings(0.08, 0.6), keyMax: 54 }],
-    ['ViolaEnsSusVib.sfz', { ...strings(0.08, 0.6), keyMin: 55, keyMax: 62 }],
-    ['ViolinEnsSusVib.sfz', { ...strings(0.08, 0.6), keyMin: 63 }],
-  ]);
-  add('Slow Strings', 49, [
-    ['CelloEnsSusVib-Quiet.sfz', { ...strings(0.4, 1.0), keyMax: 54 }],
-    ['ViolaEnsSusVib-Quiet.sfz', { ...strings(0.4, 1.0), keyMin: 55, keyMax: 62 }],
-    ['ViolinEnsSusVib-Quiet.sfz', { ...strings(0.4, 1.0), keyMin: 63 }],
-  ]);
-  add('Solo Violin', 40, [['SViolinVib.sfz', strings(0.05, 0.4)]]);
-  add('Viola', 41, [['ViolaEnsSusVib.sfz', strings(0.06, 0.5)]]);
-  add('Cello', 42, [['CelloEnsSusVib.sfz', strings(0.06, 0.5)]]);
-  add('Contrabass', 43, [['ContrabassSusVB.sfz', strings(0.06, 0.5)]]);
-  add('Tremolo Strings', 44, [
-    ['CelloEnsTrem.sfz', { ...SUS, keyMax: 57 }],
-    ['ViolinEnsTrem.sfz', { ...SUS, keyMin: 58 }],
-  ]);
-  add('Pizzicato', 45, [
-    ['CelloEnsPizz.sfz', { maxLen: 1.2, keyMax: 57 }],
-    ['ViolinEnsPizz.sfz', { maxLen: 1.0, keyMin: 58 }],
-  ]);
-  add('Harp', 46, [['Harp.sfz', { maxLen: 2.2, gens: { release: 0.8 } }]]);
-  add('Timpani', 47, [['Timpani.sfz', { maxLen: 2.5, gens: { release: 1 } }]]);
-  add('Trumpet', 56, [['TrumpetSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
-  add('Trombone', 57, [['TromboneSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
-  add('Tuba', 58, [['TubaSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
-  add('Muted Trumpet', 59, [['TrumpetStraightMuteSus.sfz', { ...SUS, gens: { attack: 0.02, release: 0.3 } }]]);
-  add('French Horn', 60, [['FHornSus.sfz', { ...SUS, gens: { attack: 0.04, release: 0.4 } }]]);
-  add('Brass Section', 61, [
-    ['TromboneSus.sfz', { ...SUS, keyMax: 52, gens: { attack: 0.03, release: 0.35 } }],
-    ['FHornSus.sfz', { ...SUS, keyMin: 53, keyMax: 64, gens: { attack: 0.03, release: 0.35 } }],
-    ['TrumpetSus.sfz', { ...SUS, keyMin: 65, gens: { attack: 0.03, release: 0.35 } }],
-  ]);
-  add('Oboe', 68, [['OboeSusVib.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
-  add('Bassoon', 70, [['BassoonSus.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
-  add('Clarinet', 71, [['ClarinetSus.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
-  add('Piccolo', 72, [['PiccoloSus.sfz', { ...SUS, gens: { attack: 0.03, release: 0.25 } }]]);
-  add('Flute', 73, [['FluteSusVib.sfz', { ...SUS, gens: { attack: 0.04, release: 0.3 } }]]);
-  add('Glockenspiel', 9, [['Glockenspiel.sfz', { maxLen: 2.0, rate: 32000, gens: { release: 1 } }]]);
-  add('Marimba', 12, [['Marimba.sfz', { maxLen: 1.5, gens: { release: 0.5 } }]]);
-  add('Xylophone', 13, [['Xylophone.sfz', { maxLen: 1.0, rate: 32000, gens: { release: 0.3 } }]]);
-  add('Tubular Bells', 14, [['TubularBells.sfz', { maxLen: 3, gens: { release: 1.5 } }]]);
-  add('Church Organ', 19, [['OrganLoud.sfz', { ...SUS, gens: { attack: 0.05, release: 0.4 } }]]);
-  add('Upright Piano', 0, [['UprightPiano.sfz', { maxLen: 3.0, layers: 1, rate: 24000, gens: { release: 0.4 } }]]);
-  add('Pizz Bass', 32, [['ContrabassPizz.sfz', { maxLen: 1.4, layers: 1, gens: { release: 0.3 } }]]);
-  // 打楽器（GM配置）：大太鼓・スネア・シンバル・ティンパニなど
-  const kitZones = vscoZones('GM-StylePerc.sfz', { maxLen: 1.8, rate: 24000, trimStart: false, gens: { release: 1.5 } })
-    .map((z) => ({ ...z, center: z.keyLo === z.keyHi ? z.keyLo : z.center }));
-  P.push(preset('Orchestra Perc', 0, realize('perc', kitZones), 128));
-  console.log('   kit', kitZones.length, 'zones');
-  return writeSf2({
-    name: 'MIDI Studio Changer Orchestra',
-    copyright: 'Samples: VS Chamber Orchestra 2 Community Edition (CC0 1.0, Versilian Studios)',
-    comment: 'Built from VSCO-2-CE samples by MIDI Studio Changer. CC0 1.0.',
-    presets: P,
-  });
-}
-
 // ================= ジャズ・ピアノトリオ =================
 function jazz() {
   const P = [];
@@ -284,7 +215,7 @@ function jazz() {
 }
 
 const only = process.argv[3]; // 例：jazz
-for (const [file, fn] of [['midichen-orchestra.sf2', orchestra], ['midichen-jazz.sf2', jazz]]) {
+for (const [file, fn] of [['midichen-jazz.sf2', jazz]]) {
   if (only && !file.includes(only)) continue;
   console.log(file);
   const bytes = fn();

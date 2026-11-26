@@ -12,8 +12,8 @@ export const SETS = [
     builtin: true, gain: 0.85, fx: { chorus: 0.3, reverb: { wet: 0.16, time: 1.8 } },
   },
   {
-    id: 'orchestra', icon: '🎻', label: 'オーケストラ（豪華）', desc: '本物の弦・金管・木管・ハープ・ティンパニを録音した音。ホールの響き付き',
-    file: 'soundfonts/midichen-orchestra.sf2', size: 33.4, gain: 1.43,
+    id: 'orchestra', icon: '🎻', label: 'オーケストラ（豪華）', desc: 'スタジオで録音した弦・金管・木管・ハープ・ティンパニ・合唱。ホールの響き付き',
+    file: 'soundfonts/midichen-orchestra.sf2', size: 32.6, gain: 1.0,
     roles: { melody: 40, chords: 48, bass: 32, other: 46 }, fx: { reverb: { wet: 0.42, time: 3.2 } },
   },
   {
@@ -82,8 +82,9 @@ const LABELS = {
     88: 'ドリームパッド', 89: 'ウォームパッド', 91: '宇宙パッド', 96: '宇宙きらきら',
   },
   orchestra: {
-    0: 'アップライトピアノ', 32: 'ピチカートベース', 40: 'バイオリン（ソロ）', 43: 'コントラバス', 44: 'トレモロの弦', 45: 'ピチカートの弦',
-    48: 'オーケストラの弦（合奏）', 49: 'ゆったりした弦', 61: '金管合奏', 19: '教会オルガン',
+    0: 'グランドピアノ', 32: 'ウッドベース', 40: 'バイオリン', 43: 'コントラバス', 44: 'トレモロの弦', 45: 'ピチカートの弦',
+    48: 'オーケストラの弦（合奏）', 49: 'ゆったりした弦', 50: 'シンセの弦', 52: '合唱「アー」', 53: '声「ウー」', 55: 'オーケストラヒット',
+    59: 'ミュートトランペット', 60: 'ホルン', 61: '金管合奏', 19: '教会オルガン',
   },
   jazz: { 0: 'グランドピアノ', 1: 'グランドピアノ（明るめ）', 32: 'ウッドベース' },
 };
@@ -165,6 +166,7 @@ export async function loadSet(set, onProgress = () => {}) {
 /** 端末にある .sf2 ファイルをセットとして追加 */
 export function setFromFile(arrayBuffer, fileName) {
   const sf = parseSf2(arrayBuffer);
+  if (sf.compressed) throw new Error('音が圧縮された形式（SF3）のサウンドフォントには、まだ対応していません。.sf2 形式のものを選んでください');
   return {
     id: `user-${Date.now()}`, icon: '📂', label: sf.name || fileName.replace(/\.sf2$/i, ''),
     desc: `読み込んだファイル：${fileName}`, sf, user: true, gain: 1.2,

@@ -20,7 +20,7 @@
   | セット | 中身 | 大きさ |
   |---|---|---|
   | ⚡ 軽い波形シンセ | 左右に広がる厚めのシンセ・ピコピコ音（21種類＋ドラム2種類） | 読み込みなし |
-  | 🎻 オーケストラ（豪華） | 本物の弦・金管・木管・ハープ・ティンパニ・打楽器を録音した音（VSCO-2-CE）＋ホールの響き | 約33MB |
+  | 🎻 オーケストラ（豪華） | スタジオで録音した弦・金管・木管・ハープ・ティンパニ・合唱・打楽器（MuseScore MS Basic）＋ホールの響き | 約33MB |
   | 🎷 ジャズ・ピアノトリオ（豪華） | コンサートグランドピアノ（Salamander）・ウッドベース・ジャズドラムを録音した音 | 約27MB |
   | 🎹 標準 | ピアノ・ストリングス・ギター・ドラムなど128種類＋ドラム13種類（GeneralUser GS） | 約32MB |
   | 🌌 シンセ | FMエレピ・スーパーソー・アナログベースなど（アプリ独自） | 約3MB |
@@ -58,8 +58,14 @@ python3 -m http.server 8000
     配布するときは作者のダウンロードURLに直接リンクせず、自分で持っているコピーを置くこと、とされています（このリポジトリはそうしています）。
   - ライセンス全文：[soundfonts/GeneralUser-GS-LICENSE.txt](soundfonts/GeneralUser-GS-LICENSE.txt)
 - **オーケストラ**（`soundfonts/midichen-orchestra.sf2`）
-  - 元の録音：VS Chamber Orchestra 2: Community Edition（Versilian Studios）— https://github.com/sgossner/VSCO-2-CE
-  - CC0 1.0（パブリックドメイン）。このアプリ用に音を選んで軽くしたものも CC0 です。
+  - 元の音源：MuseScore の「MS Basic」（MuseScore_General）— https://github.com/musescore/MuseScore （share/sound/）
+  - **MIT License**：商用利用・再配布・改変OK。作者名と著作権表示を残すことが条件です。
+    - FluidR3 (original version) by Frank Wen, Copyright (c) 2000-02
+    - Mono conversion (FluidR3Mono) by Michael Cowgill, Copyright (c) 2014-17
+    - Adaptation for MuseScore_General.sf2 by S. Christian Collins, Copyright (c) 2018-19
+  - このアプリでは、オーケストラの楽器だけを取り出し、モノラル・短いくり返しにするなど加工しています（`tools/build-orchestra.mjs`）。
+  - ライセンス全文：[soundfonts/MuseScore-General-LICENSE.md](soundfonts/MuseScore-General-LICENSE.md)
+  - 以前の版では VSCO-2-CE（CC0）の録音を使っていましたが、部屋の雑音が目立ったため差し替えました。
 - **ジャズ・ピアノトリオ**（`soundfonts/midichen-jazz.sf2`）
   - ピアノ：**Salamander Grand Piano V3 — Alexander Holm**（CC-BY 3.0）https://archive.org/details/SalamanderGrandPianoV3
     （SFZ版：https://github.com/sfzinstruments/SalamanderGrandPiano）。使うときは作者名の表示が必要です。
@@ -67,7 +73,7 @@ python3 -m http.server 8000
   - ウッドベース：VSCO-2-CE（CC0）
   - ドラム：Virtuosity Drums（CC0）— https://github.com/sfzinstruments/virtuosity_drums
   - このセットの音で作った曲をゲームなどで使うときは、「Piano: Salamander Grand Piano by Alexander Holm (CC-BY 3.0)」とクレジットを書いてください。
-- オーケストラ・ジャズのセットは `tools/build-sample-soundfonts.mjs` で元の録音から作り直せます（git・ffmpeg が必要）。
+- ジャズのセットは `tools/build-sample-soundfonts.mjs`、オーケストラは `tools/build-orchestra.mjs` で元の音源から作り直せます（git・ffmpeg が必要）。
 - **アプリ独自セット**（`soundfonts/midichen-chip.sf2` / `midichen-synth.sf2`）
   - すべてプログラムで合成した音です（`tools/make-soundfonts.mjs` で作り直せます）。
   - CC0 1.0（パブリックドメイン）：商用・再配布・改変を含め、自由に使えます。ゲームのBGM用の音源としてもそのまま使えます。
