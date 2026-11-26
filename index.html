@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#14122b">
+  <!-- 公開時に GitHub Actions がバージョン（日時と番号）に書き換える -->
+  <meta name="app-version" content="dev">
   <title>MIDI Studio Changer（ミディチェン）</title>
   <meta name="description" content="好きな曲を取り込んで、打ち込み音楽（シンセ風）に変換して鳴らすアプリ">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎹</text></svg>">
@@ -166,8 +168,13 @@
   <footer class="app-footer">
     <p>曲はこの端末の中だけで処理され、どこにも送られません。取り込んだ曲は、個人で楽しむ範囲で使ってください。</p>
     <p><a href="https://github.com/kimu22734121-byte/midi-studio-changer">ソースコード（GitHub）</a></p>
+    <p class="version">バージョン：<span id="app-version">開発版</span></p>
   </footer>
 
+  <div id="update-banner" class="update-banner" hidden>
+    <span>新しいバージョンがあります</span>
+    <button class="btn small primary" id="update-btn">最新版にする</button>
+  </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script type="module" src="src/main.js"></script>
 </body>
