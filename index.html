@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14122b">
+  <title>MIDI Studio Changer（ミディチェン）</title>
+  <meta name="description" content="好きな曲を取り込んで、打ち込み音楽（シンセ風）に変換して鳴らすアプリ">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎹</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>MIDI Studio Changer <span class="nick">ミディチェン</span></h1>
+    <p class="tagline">好きな曲を、ピコピコ・シンセの打ち込み音楽に変えて聴くアプリ</p>
+  </header>
+
+  <main>
+    <!-- ① 曲を入れる -->
+    <section class="card" id="import-card">
+      <h2><span class="num">1</span>曲を入れる</h2>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="audio" aria-selected="true">🎵 音楽・動画ファイル</button>
+        <button role="tab" data-tab="midi">🎹 MIDI</button>
+        <button role="tab" data-tab="mic">🎤 マイク録音</button>
+        <button role="tab" data-tab="text">📝 楽譜を貼る</button>
+        <button role="tab" data-tab="xml">📄 MusicXML</button>
+      </div>
+
+      <div class="panel" data-panel="audio">
+        <p>スマホやパソコンに保存してある曲（MP3・WAV・M4A など）や、動画（MP4・MOV）を選んでください。曲を聴き取って、メロディ・伴奏・ドラムの打ち込みに作り直します。動画は音だけを使います。</p>
+        <p class="hint">歌とメロディがはっきりした曲ほどうまくいきます。音がぎっしり詰まった曲は崩れやすいです。元の曲そのままではなく「打ち込み風の別バージョン」になります。</p>
+        <label class="btn primary file-btn">曲・動画のファイルを選ぶ<input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mov,.m4v,.webm"></label>
+        <details class="howto">
+          <summary>📱 iPhoneで鳴っている音を取り込みたいときは（画面収録）</summary>
+          <ol>
+            <li>はじめてのときだけ：「設定」→「コントロールセンター」に「画面収録」を追加します</li>
+            <li>コントロールセンターを開いて ⏺（画面収録）を押します。3秒後に録画が始まります（マイクはオフのままでOK）</li>
+            <li>取り込みたい曲を流します（20秒〜1分くらいがおすすめ）</li>
+            <li>画面上の赤い表示をタップして録画を止めると、「写真」に保存されます</li>
+            <li>「写真」アプリの編集で、前後のいらない部分を切っておくと、早くきれいに変換できます</li>
+            <li>上の「曲・動画のファイルを選ぶ」→「写真ライブラリ」から、その動画を選びます</li>
+          </ol>
+          <p class="hint">Apple Music・Spotify などの配信サービスの曲は、著作権を守るしくみで画面収録しても音が消えるため、取り込めません。</p>
+        </details>
+      </div>
+
+      <div class="panel" data-panel="midi" hidden>
+        <p>MIDIファイル（.mid）を読み込みます。聴き取りがいらないので、<strong>いちばんきれいに</strong>変換できます。</p>
+        <label class="btn primary file-btn">MIDIファイルを選ぶ<input type="file" id="midi-file" accept=".mid,.midi,audio/midi,audio/x-midi"></label>
+      </div>
+
+      <div class="panel" data-panel="mic" hidden>
+        <p>流れている曲をマイクで録音して、そのまま打ち込みに変換します。</p>
+        <ul class="tips">
+          <li>🤫 静かな場所で録りましょう（話し声・テレビ・エアコンの音が入ると精度が落ちます）</li>
+          <li>🔊 スピーカーにスマホを近づけすぎず、30cmくらい離します</li>
+          <li>🎚️ 音量は「ちょっと大きめ」くらい。下のメーターが赤くならない程度に</li>
+          <li>⏱️ 20秒〜1分くらいがおすすめです</li>
+        </ul>
+        <div class="rec-row">
+          <button class="btn primary" id="rec-btn">● 録音をはじめる</button>
+          <span id="rec-time" class="rec-time">0:00</span>
+        </div>
+        <div class="meter"><div id="rec-level"></div></div>
+      </div>
+
+      <div class="panel" data-panel="text" hidden>
+        <p>テキストの楽譜を貼り付けて読み込みます。<strong>ABC記譜法</strong>か、<strong>コード進行</strong>（例：<code>C G Am F</code>）が使えます。</p>
+        <textarea id="score-text" rows="7" spellcheck="false" placeholder="ここに楽譜を貼り付け&#10;例）C G Am F | Dm7 G7 C C"></textarea>
+        <div class="row wrap">
+          <button class="btn small" id="example-abc">ABCの例を入れる</button>
+          <button class="btn small" id="example-chords">コード進行の例を入れる</button>
+          <button class="btn primary" id="load-text">読み込む</button>
+        </div>
+        <p class="hint">コード進行は「|」で小節を区切れます。<code>テンポ 120</code> のように書くと速さも指定できます。</p>
+      </div>
+
+      <div class="panel" data-panel="xml" hidden>
+        <p>MusicXML形式の楽譜ファイル（.musicxml / .xml / .mxl）を読み込みます。楽譜ソフトから書き出したものが使えます。</p>
+        <label class="btn primary file-btn">楽譜ファイルを選ぶ<input type="file" id="xml-file" accept=".musicxml,.xml,.mxl,application/vnd.recordare.musicxml+xml,application/vnd.recordare.musicxml"></label>
+      </div>
+
+      <div class="demo-row">
+        <span>まずは試してみる →</span>
+        <button class="btn small" id="demo-btn">お試し曲（きらきら星）</button>
+      </div>
+
+      <div id="status" class="status" hidden>
+        <div class="progress"><div id="progress-bar"></div></div>
+        <p id="status-text"></p>
+      </div>
+    </section>
+
+    <!-- ② 聴く -->
+    <section class="card needs-song" id="player-card" hidden>
+      <h2><span class="num">2</span>聴く</h2>
+      <p class="song-title" id="song-title"></p>
+      <p class="song-info" id="song-info"></p>
+      <canvas id="roll" class="roll" aria-label="音符の表示"></canvas>
+      <div class="transport">
+        <button class="btn round primary" id="play-btn" aria-label="再生">▶</button>
+        <button class="btn round" id="stop-btn" aria-label="最初に戻る">■</button>
+        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="再生位置">
+        <span class="time" id="time">0:00 / 0:00</span>
+      </div>
+      <p class="legend"><span class="c-melody">■メロディ</span> <span class="c-chords">■伴奏</span> <span class="c-bass">■ベース</span> <span class="c-drums">■ドラム</span> <span class="c-other">■その他</span>　薄い音符は、音の数を絞ったので鳴らしていない音です</p>
+    </section>
+
+    <!-- ③ 音の数 -->
+    <section class="card needs-song" id="poly-card" hidden>
+      <h2><span class="num">3</span>同時に鳴らす音の数</h2>
+      <p>音の数を少なくすると、大事な音（メロディ・ベース）だけが残って、昔のゲーム音楽っぽくなります。</p>
+      <div class="poly-row">
+        <input type="range" id="poly-slider" min="0" max="11" step="1" aria-label="音の数">
+        <input type="number" id="poly-number" min="1" max="128" inputmode="numeric" aria-label="音の数を数字で入力">
+        <span class="unit">音</span>
+      </div>
+      <div class="presets">
+        <button class="btn preset" data-preset="famicom">👾 ファミコン風<small>4音・ピコピコ</small></button>
+        <button class="btn preset" data-preset="sfc">🕹️ スーファミ風<small>16音</small></button>
+        <button class="btn preset" data-preset="rich">✨ リッチ<small>64音・シンセ</small></button>
+        <button class="btn preset" data-preset="original">↩️ 最初の音色<small>64音</small></button>
+      </div>
+      <label class="check"><input type="checkbox" id="auto-reduce" checked> 重くて音がとぎれたら、自動で音の数を減らす</label>
+    </section>
+
+    <!-- ④ 音色 -->
+    <section class="card needs-song" id="tone-card" hidden>
+      <h2><span class="num">4</span>楽器の音色</h2>
+      <p>パートごとに音色を選べます。🔇 を押すとそのパートを消せます。</p>
+      <div id="track-list" class="track-list"></div>
+    </section>
+
+    <!-- ⑤ AIアレンジ -->
+    <section class="card needs-song" id="ai-card" hidden>
+      <h2><span class="num">5</span>AIにアレンジを頼む <span class="badge">準備中</span></h2>
+      <p>「もっと明るく」「テンポ速めで」「宇宙っぽく寂しげに」など、雰囲気を言葉で伝えると、AIがアレンジし直してくれる機能です。次のアップデートで使えるようになります。</p>
+      <textarea id="ai-text" rows="2" placeholder="例）宇宙っぽく寂しげに" disabled></textarea>
+      <div class="row wrap chips">
+        <button class="chip" disabled>もっと明るく</button>
+        <button class="chip" disabled>テンポ速めで</button>
+        <button class="chip" disabled>宇宙っぽく寂しげに</button>
+        <button class="chip" disabled>戦闘シーン風</button>
+      </div>
+      <button class="btn primary" disabled>アレンジしてもらう</button>
+    </section>
+
+    <!-- ⑥ 保存 -->
+    <section class="card needs-song" id="save-card" hidden>
+      <h2><span class="num">6</span>保存する</h2>
+      <p>今の音の数・音色のまま、MIDIファイルとして保存できます（ゲームのBGMなどに使えます）。</p>
+      <button class="btn primary" id="save-midi">💾 MIDIファイルで保存</button>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>曲はこの端末の中だけで処理され、どこにも送られません。取り込んだ曲は、個人で楽しむ範囲で使ってください。</p>
+    <p><a href="https://github.com/kimu22734121-byte/midi-studio-changer">ソースコード（GitHub）</a></p>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

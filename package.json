@@ -1,0 +1,12 @@
+{
+  "name": "midi-studio-changer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MIDI Studio Changer（ミディチェン）: 曲を打ち込み音楽に変換するブラウザアプリ",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "license": "MIT"
+}
