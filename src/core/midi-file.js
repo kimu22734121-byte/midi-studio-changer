@@ -2,7 +2,15 @@
 import { createSong } from './song.js';
 
 /** GMの楽器番号 → このアプリの音色ID */
+const TONE_OF_PROGRAM = {
+  4: 'epiano', 5: 'epiano', 8: 'bell', 9: 'bell', 10: 'bell', 11: 'bell', 12: 'bell', 13: 'bell', 14: 'bell',
+  19: 'organ', 24: 'pluck', 25: 'pluck', 39: 'subbass', 45: 'pluck', 46: 'pluck', 47: 'subbass', 50: 'strings', 51: 'strings',
+  52: 'choir', 53: 'choir', 54: 'choir', 58: 'brass', 64: 'sine', 65: 'sine', 66: 'sine', 67: 'sine', 68: 'sine', 69: 'sine',
+  70: 'sine', 71: 'sine', 81: 'supersaw', 88: 'pad', 89: 'pad', 90: 'pad', 91: 'space', 92: 'space', 94: 'space', 95: 'pad',
+};
+
 export function toneFromProgram(program) {
+  if (TONE_OF_PROGRAM[program]) return TONE_OF_PROGRAM[program];
   const fam = Math.floor(program / 8);
   return [
     'piano', 'bell', 'organ', 'pluck', 'bass', 'strings', 'strings', 'brass',
@@ -156,10 +164,17 @@ export function writeMidi(song, programOf = () => 0) {
   chunks.push(trackChunk([...t0, 0, 0xff, 0x2f, 0]));
 
   let nextCh = 0;
+  const chOfProgram = new Map();
   for (const tr of song.tracks) {
     let ch;
+    const prog = programOf(tr) & 127;
     if (tr.isDrum) ch = 9;
-    else { ch = nextCh++ % 15; if (ch >= 9) ch++; }
+    else if (chOfProgram.has(prog)) ch = chOfProgram.get(prog);
+    else {
+      ch = nextCh < 15 ? nextCh++ : 14;
+      if (ch >= 9) ch = ch + 1 > 15 ? 15 : ch + 1;
+      chOfProgram.set(prog, ch);
+    }
     const evs = [];
     for (const n of tr.notes) {
       const on = toTick(n.t);
