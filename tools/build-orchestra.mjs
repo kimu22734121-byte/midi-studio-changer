@@ -3,7 +3,8 @@
 // オーケストラの楽器だけを取り出して、軽い .sf2 にする。スタジオ録音なので雑音が少ない。
 //
 // 使い方：
-//   node tools/build-orchestra.mjs "<MS Basic.sf3 の場所>"
+//   node tools/build-orchestra.mjs "<MS Basic.sf3 の場所>"          → オーケストラ（midichen-orchestra.sf2）
+//   node tools/build-orchestra.mjs "<MS Basic.sf3 の場所>" full     → 生音（全128楽器＋ドラム8種類、midichen-real.sf2）
 //   （MS Basic.sf3 は https://github.com/musescore/MuseScore の share/sound/ にある）
 // 必要なもの：ffmpeg（圧縮された音を元に戻すため）
 import { execFileSync } from 'node:child_process';
@@ -12,6 +13,7 @@ import { parseSf2 } from '../src/audio/sf2.js';
 import { writeSf2 } from './sf2-writer.mjs';
 
 const SRC = process.argv[2];
+const FULL = process.argv[3] === 'full';
 if (!SRC) { console.error('usage: node tools/build-orchestra.mjs "<MS Basic.sf3>"'); process.exit(1); }
 // 容量を抑えるための設定
 //  - 高い音の少ない楽器は 22kHz、きらきらした楽器は 32kHz
@@ -26,8 +28,9 @@ const headFor = (prog, isKit) => (isKit ? 2.5 : prog === 0 ? 2.5 : 1.0);
 const rateFor = (prog, isKit) => (isKit || BRIGHT.has(prog) ? 32000 : prog === 0 ? 24000 : 22050);
 
 // 取り出す楽器（GMの番号）と、打楽器セット（オーケストラ用）
-const PROGRAMS = [0, 8, 9, 11, 12, 13, 14, 19, 32, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 52, 53, 55, 56, 57, 58, 59, 60, 61, 68, 69, 70, 71, 72, 73, 74, 75];
-const KITS = [48, 0];
+const ORCH = [0, 8, 9, 11, 12, 13, 14, 19, 32, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 52, 53, 55, 56, 57, 58, 59, 60, 61, 68, 69, 70, 71, 72, 73, 74, 75];
+const PROGRAMS = FULL ? Array.from({ length: 128 }, (_, i) => i) : ORCH;
+const KITS = FULL ? [0, 8, 16, 24, 25, 32, 40, 48] : [48, 0];
 
 const sf = parseSf2(readFileSync(SRC));
 if (!sf.compressed) console.warn('（SF3 ではないようですが、そのまま続けます）');
@@ -122,14 +125,22 @@ for (const prog of PROGRAMS) {
   if (!p) { console.warn('なし', prog); continue; }
   presets.push({ name: p.name, bank: 0, program: prog, zones: zonesOf(p) });
 }
-const kit = KITS.map((k) => sf.presets.find((x) => x.bank === 128 && x.program === k)).find(Boolean);
-if (kit) presets.push({ name: kit.name, bank: 128, program: 0, zones: zonesOf(kit, true) });
+if (FULL) {
+  for (const k of KITS) {
+    const kit = sf.presets.find((x) => x.bank === 128 && x.program === k);
+    if (kit) presets.push({ name: kit.name, bank: 128, program: k, zones: zonesOf(kit, true) });
+    else console.warn('ドラムなし', k);
+  }
+} else {
+  const kit = KITS.map((k) => sf.presets.find((x) => x.bank === 128 && x.program === k)).find(Boolean);
+  if (kit) presets.push({ name: kit.name, bank: 128, program: 0, zones: zonesOf(kit, true) });
+}
 
 const out = writeSf2({
-  name: 'MIDI Studio Changer Orchestra',
+  name: FULL ? 'MIDI Studio Changer Real' : 'MIDI Studio Changer Orchestra',
   copyright: 'MuseScore_General (MIT): FluidR3 by Frank Wen (c) 2000-02, FluidR3Mono by Michael Cowgill (c) 2014-17, MuseScore_General by S. Christian Collins (c) 2018-19',
-  comment: 'Orchestral subset of MuseScore MS Basic, converted by MIDI Studio Changer. MIT license.',
+  comment: (FULL ? 'All GM instruments' : 'Orchestral subset') + ' of MuseScore MS Basic, converted by MIDI Studio Changer. MIT license.',
   presets,
 });
-writeFileSync(new URL('../soundfonts/midichen-orchestra.sf2', import.meta.url), out);
+writeFileSync(new URL(FULL ? '../soundfonts/midichen-real.sf2' : '../soundfonts/midichen-orchestra.sf2', import.meta.url), out);
 console.log('presets', presets.length, 'samples', cache.size, 'size', (out.length / 1048576).toFixed(1), 'MB');

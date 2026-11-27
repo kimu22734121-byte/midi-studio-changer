@@ -248,7 +248,7 @@ export function compOnsets(sideFlux, hopT, duration, beat) {
  * flux：帯域ごとの立ち上がり／ E：帯域ごとの大きさ（フレームごと）／ hopT：フレームの長さ（秒）
  * 戻り値：[{ i（フレーム）, p（GMの番号）, s（強さ0〜1） }]
  */
-export function classifyDrums(flux, E, spread, hopT) {
+export function classifyDrums(flux, E, spread, hopT, spreadC = null) {
   const out = [];
   const n = flux.low.length;
   const after = (arr, i, sec) => arr[Math.min(n - 1, i + Math.round(sec / hopT))];
@@ -263,12 +263,15 @@ export function classifyDrums(flux, E, spread, hopT) {
   for (const { i, s } of pickPeaks(flux.low, Math.round(0.08 / hopT), 0.3)) {
     const top = peakNear(E.low, i);
     if (top <= 0) continue;
-    if (after(E.low, i, 0.13) > top * 0.3) continue; // 長く続く → ベース
+    // 長く続く低い音はふつうベース。ただし、曲の中でとびきり強い低い音の立ち上がり（上位の強さ）は、
+    // 長く響いてもバスドラ（電子音の「ドゥーン」と響くバスドラ）
+    const strong = s >= 0.9;
+    if (after(E.low, i, 0.13) > top * 0.3 && !strong) continue;
     if (flux.low[i] < flux.mid[i] * 0.8) continue;
     out.push({ i, p: 36, s });
     kickF.add(i);
   }
-  // スネア：「胴」の音（150〜300Hz）と、ザッという音（1〜4kHz）が同時に出る
+  // スネア：「胴」の音（150〜300Hz）と、ザッという音（1〜4kHz）が同時に出る（バスドラと同時のものは除く）
   for (const { i, s } of pickPeaks(flux.mid, Math.round(0.08 / hopT), 0.3)) {
     if ([...kickF].some((k) => Math.abs(k - i) <= 2)) continue;
     const body = Math.max(flux.body[i], flux.body[Math.min(n - 1, i + 1)], flux.body[Math.max(0, i - 1)]);
@@ -278,6 +281,23 @@ export function classifyDrums(flux, E, spread, hopT) {
     const top = peakNear(E.mid, i);
     if (after(E.mid, i, 0.07) < top * 0.15) continue;
     out.push({ i, p: 38, s });
+  }
+  // クラップ：胴の音がないザッという音。真ん中の音だけで見る（左右に広がったシンセに邪魔されない）。
+  // 毎拍バスドラの曲ではいつもバスドラと重なるので、バスドラと同時でも除かない
+  // （あとで「1拍おきに規則正しく」出るものだけ残す）
+  // （スネアがほとんどない曲だけで使うかどうかは、拍の位置がわかってから決める）
+  if (flux.cmid) {
+    const snareF = out.filter((o) => o.p === 38).map((o) => o.i);
+    for (const { i, s } of pickPeaks(flux.cmid, Math.round(0.08 / hopT), 0.3)) {
+      if (snareF.some((k) => Math.abs(k - i) <= 2)) continue;
+      const body = Math.max(flux.body[i], flux.body[Math.min(n - 1, i + 1)], flux.body[Math.max(0, i - 1)]);
+      if ((spreadC || spread)[i] < 0.45 || s < 0.4) continue;
+      const top = peakNear(E.mid, i);
+      if (after(E.mid, i, 0.07) < top * 0.15) continue;
+      void body;
+      // w：頭打ちにしない強さ（拍ごとの強さを比べるのに使う）
+      out.push({ i, p: 39, s, w: flux.cmid[i] / pickRef(flux.cmid) });
+    }
   }
   // ハイハット／シンバル：高い音。長く響けばシンバル、少し響けば開いたハイハット
   let lastCrash = -1e9;
