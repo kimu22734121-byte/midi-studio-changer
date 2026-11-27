@@ -3,13 +3,19 @@
 const CH = {
   C: [0, [0, 4, 7], 'maj'], Am7: [9, [0, 3, 7, 10], 'min'], Fmaj7: [5, [0, 4, 7, 11], 'maj'], G7: [7, [0, 4, 7, 10], 'maj'],
   Dm7: [2, [0, 3, 7, 10], 'min'], Em7: [4, [0, 3, 7, 10], 'min'], F: [5, [0, 4, 7], 'maj'], G: [7, [0, 4, 7], 'maj'],
+  Am: [9, [0, 3, 7], 'min'], E7: [4, [0, 4, 7, 10], 'maj'], Dm: [2, [0, 3, 7], 'min'], Bb: [10, [0, 4, 7], 'maj'], E: [4, [0, 4, 7], 'maj'],
 };
 // 1小節ごと（[名前, 拍数] の並び）。4小節目・8小節目は途中で変わる
-const PROG = [[['C', 4]], [['Am7', 4]], [['Fmaj7', 4]], [['Dm7', 2], ['G7', 2]], [['C', 4]], [['Em7', 4]], [['F', 4]], [['Dm7', 2], ['G', 2]]];
+const PROGS = {
+  pop: [[['C', 4]], [['Am7', 4]], [['Fmaj7', 4]], [['Dm7', 2], ['G7', 2]], [['C', 4]], [['Em7', 4]], [['F', 4]], [['Dm7', 2], ['G', 2]]],
+  // 暗い調（Aマイナー）
+  minor: [[['Am', 4]], [['F', 4]], [['C', 4]], [['G', 2], ['E7', 2]], [['Am', 4]], [['Dm', 4]], [['Bb', 2], ['F', 2]], [['E', 4]]],
+};
 
 // dense：ハイハットを16分で細かく刻み、残響のような高い音を薄く鳴らし続ける（本物の曲に近い）
 // gain：全体の音量／ tap：最初に一瞬だけ大きな音（画面収録のタップ音など）
-export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, vocal = true, dense = false, gain = 1, tap = false } = {}) {
+export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, vocal = true, dense = false, gain = 1, tap = false, prog = 'pop' } = {}) {
+  const PROG = PROGS[prog];
   const beat = 60 / bpm;
   const t0 = 0.5;
   const len = Math.ceil((t0 + bars * 4 * beat + 1.5) * sr);
@@ -101,7 +107,7 @@ export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, voca
   }
   // 歌（真ん中）：ビブラート付き
   if (vocal) {
-    const mel = [64, 67, 69, 67, 64, 62, 60, 62, 64, 67, 72, 71, 69, 67, 65, 64];
+    const mel = prog === 'minor' ? [69, 72, 72, 71, 67, 72, 71, 68, 69, 72, 74, 72, 70, 69, 68, 71] : [64, 67, 69, 67, 64, 62, 60, 62, 64, 67, 72, 71, 69, 67, 65, 64];
     for (let k = 0; k < bars * 2; k++) {
       const n = { t: t0 + k * 2 * beat, d: beat * 1.8, p: mel[k % mel.length] };
       truth.melody.push(n);
@@ -171,4 +177,24 @@ export function bandScore(song, truth, off) {
     drums[k] = f1(dn.filter((n) => kindOf(n.p) === k), truth.drums.filter((d) => d.kind === k), (x, w) => Math.abs(x.t - w.t) < 0.06);
   }
   return { bass, bassExact, chordRoot: rootOk / beats, chordExact: setOk / beats, rhythm, drums };
+}
+
+/**
+ * 濁り率：鳴っている音（ドラム以外・増やしたパートも含む）のうち、
+ * その瞬間の正しい和音・メロディ・ベースのどれにも含まれない音の割合（小さいほど濁りがない）
+ */
+export function muddiness(song, truth, off) {
+  const notes = song.tracks.filter((t) => !t.isDrum).flatMap((t) => t.notes.map((n) => ({ ...n, t: n.t + off })));
+  const end = Math.max(...truth.chords.map((c) => c.t + c.d));
+  let bad = 0, all = 0;
+  for (let t = truth.chords[0].t + 0.05; t < end; t += 0.1) {
+    const c = truth.chords.find((x) => x.t <= t && x.t + x.d > t);
+    if (!c) continue;
+    const ok = new Set(CH[c.name][1].map((x) => (c.root + x) % 12));
+    for (const arr of [truth.melody, truth.bass]) for (const n of arr) if (n.t <= t && n.t + n.d > t) ok.add(n.p % 12);
+    for (const n of notes) {
+      if (n.t <= t && n.t + n.d > t) { all++; if (!ok.has(n.p % 12)) bad++; }
+    }
+  }
+  return all ? bad / all : 0;
 }

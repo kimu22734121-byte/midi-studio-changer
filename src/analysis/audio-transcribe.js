@@ -112,6 +112,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   }
   const sal = new Float32Array(framesB * NP);
   const chroma = new Float32Array(framesB * 12);
+  const chromaS = side ? new Float32Array(framesB * 12) : null; // 左右の差（歌が入っていない伴奏）の12音
   const energy = new Float32Array(framesB);
   const magB = new Float64Array(nB / 2);
   const magS = side ? new Float64Array(nB / 2) : null;
@@ -163,6 +164,13 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       if (!isPeak) continue;
       if (chromaBin[b] >= 0) chroma[f * 12 + chromaBin[b]] += magB[b];
     }
+    if (side) {
+      for (let b = 1; b < nB / 2 - 1; b++) {
+        if (chromaBin[b] < 0) continue;
+        const v = Math.sqrt(magS[b]), lo = Math.sqrt(magS[b - 1]), hi = Math.sqrt(magS[b + 1]);
+        if (v > lo && v >= hi) chromaS[f * 12 + chromaBin[b]] += v;
+      }
+    }
     if (f % 300 === 0) onProgress(0.32 + 0.45 * (f / framesB), 'メロディを聴き取っています…');
   }
 
@@ -187,7 +195,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
 
   // ---------- 6. 和音（1拍ごと・セブンスも） ----------
   onProgress(0.9, 'コードを調べています…');
-  const chords = chordsByBeat(chroma, energy, framesB, hopB / sr, offset, beat, bassPcAt);
+  const chords = chordsByBeat(chroma, energy, framesB, hopB / sr, offset, beat, bassPcAt, chromaS);
 
   const tracks = [{ name: 'メロディ', role: 'melody', notes: melody }];
   if (chords.length) {

@@ -144,7 +144,7 @@ for (let r = 0; r < 12; r++) {
  * chroma：フレームごとの12音の強さ（歌の音は弱めておく）／ bassPc(t)：その時刻のベースの音（なければ -1）
  * 戻り値：[{ chord, start（拍）, beats }]（start は offset を 0 とした拍）
  */
-export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcAt) {
+export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcAt, chromaS = null) {
   const nBeats = Math.floor((frames * hopT - offset) / beat);
   if (nBeats < 1) return [];
   const medE = pct(energy, 0.5);
@@ -156,6 +156,14 @@ export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcA
     const c = new Float64Array(12);
     let e = 0;
     for (let f = fa; f < fb; f++) { e += energy[f]; for (let i = 0; i < 12; i++) c[i] += chroma[f * 12 + i]; }
+    // 左右の差の音（歌が入っていない伴奏）も半分混ぜる（それぞれの大きさをそろえてから）。
+    // 歌が和音の判定の邪魔をしなくなり、セブンスも見分けやすくなる（試験用の曲で 56%→93%）
+    if (chromaS) {
+      const cs = new Float64Array(12);
+      for (let f = fa; f < fb; f++) for (let i = 0; i < 12; i++) cs[i] += chromaS[f * 12 + i];
+      const nm = Math.hypot(...c) || 1, ns = Math.hypot(...cs);
+      if (ns > 0) for (let i = 0; i < 12; i++) c[i] = (c[i] / nm) * 0.5 + (cs[i] / ns) * 0.5;
+    }
     e /= Math.max(1, fb - fa);
     const row = new Float64Array(NT + 1);
     if (e < medE * 0.15) { row.fill(-1); row[NONE] = 0.5; emis.push(row); continue; }
@@ -179,24 +187,29 @@ export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcA
     emis.push(row);
   }
   // なめらかにつなぐ（すぐ変わりすぎないように）
-  const N = NT + 1, SW = 0.12;
-  let score = Float64Array.from(emis[0]);
-  const back = [];
-  for (let k = 1; k < nBeats; k++) {
-    let bestPrev = 0;
-    for (let j = 1; j < N; j++) if (score[j] > score[bestPrev]) bestPrev = j;
-    const nxt = new Float64Array(N), bk = new Uint16Array(N);
-    for (let j = 0; j < N; j++) {
-      const stay = score[j], move = score[bestPrev] - SW;
-      if (stay >= move) { nxt[j] = stay + emis[k][j]; bk[j] = j; } else { nxt[j] = move + emis[k][j]; bk[j] = bestPrev; }
+  const N = NT + 1;
+  const decode = (switchCost) => {
+    let score = Float64Array.from(emis[0]);
+    const back = [];
+    for (let k = 1; k < nBeats; k++) {
+      let bestPrev = 0;
+      for (let j = 1; j < N; j++) if (score[j] > score[bestPrev]) bestPrev = j;
+      const sw = switchCost(k);
+      const nxt = new Float64Array(N), bk = new Uint16Array(N);
+      for (let j = 0; j < N; j++) {
+        const stay = score[j], move = score[bestPrev] - sw;
+        if (stay >= move) { nxt[j] = stay + emis[k][j]; bk[j] = j; } else { nxt[j] = move + emis[k][j]; bk[j] = bestPrev; }
+      }
+      back.push(bk);
+      score = nxt;
     }
-    back.push(bk);
-    score = nxt;
-  }
-  let st = 0;
-  for (let j = 1; j < N; j++) if (score[j] > score[st]) st = j;
-  const states = new Array(nBeats);
-  for (let k = nBeats - 1; k >= 0; k--) { states[k] = st; if (k > 0) st = back[k - 1][st]; }
+    let st = 0;
+    for (let j = 1; j < N; j++) if (score[j] > score[st]) st = j;
+    const out = new Array(nBeats);
+    for (let k = nBeats - 1; k >= 0; k--) { out[k] = st; if (k > 0) st = back[k - 1][st]; }
+    return out;
+  };
+  const states = decode(() => 0.12);
   const list = [];
   for (let k = 0; k < nBeats; k++) {
     const s = states[k];

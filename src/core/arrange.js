@@ -74,19 +74,37 @@ const LAYERS = [
 ];
 
 /** この音数で使う楽器（パート）の数の目安 */
-export function ensembleSize(polyphony, baseTracks = 4) {
-  return baseTracks + LAYERS.filter((l) => polyphony >= l.min).length;
+// 「すっきり」：音がぶつからない重ね（メロディ・ベースを別の楽器で）が中心。
+// 和音から作るのは「伸ばす音」だけで、細かく動くアルペジオ・刻み・ハモりは入れない（混み合ってグシャグシャにならないように）
+const CLEAN = [
+  { min: 8, name: 'フルート（メロディを1オクターブ上で）', role: 'melody', program: 73, layer: 1, make: (c) => shift(c.melody, 12, 0.5, { max: 96 }) },
+  { min: 8, name: 'チェロ（ベースを1オクターブ上で）', role: 'bass', program: 42, layer: 1, make: (c) => shift(c.bass, 12, 0.5) },
+  { min: 16, name: 'バイオリン（メロディを重ねる）', role: 'melody', program: 40, layer: 2, make: (c) => shift(c.melody, 0, 0.4) },
+  { min: 16, name: 'ストリングス（和音をそっと伸ばす）', role: 'chords', program: 48, layer: 2, make: (c) => pad(c, 0, 0.3) },
+  { min: 32, name: 'コントラバス（ベースを1オクターブ下で）', role: 'bass', program: 43, layer: 3, make: (c) => shift(c.bass, -12, 0.45, { min: 28 }) },
+  { min: 32, name: 'ホルン（和音の一番上をそっと伸ばす）', role: 'chords', program: 60, layer: 3, make: (c) => chordTone(c, 0, 67, 0.28) },
+  { min: 32, name: 'グロッケン（大きな区切りでキラッ）', role: 'other', program: 9, layer: 3, make: (c) => bells(c, 0.3, 16) },
+  { min: 64, name: 'クラリネット（メロディを1オクターブ下で）', role: 'melody', program: 71, layer: 4, make: (c) => shift(c.melody, -12, 0.35, { min: 50 }) },
+  { min: 64, name: 'チューバ（ベースを重ねる）', role: 'bass', program: 58, layer: 4, make: (c) => shift(c.bass, 0, 0.35, { min: 28 }) },
+  { min: 128, name: 'オーボエ（メロディを重ねる）', role: 'melody', program: 68, layer: 5, make: (c) => shift(c.melody, 0, 0.3) },
+  { min: 128, name: 'ピアノ（和音をそっと伸ばす）', role: 'chords', program: 0, layer: 5, make: (c) => pad(c, 12, 0.22) },
+];
+const MODES = { clean: CLEAN, full: LAYERS };
+
+/** この音数で使う楽器（パート）の数の目安（mode：'clean'＝すっきり／'full'＝たくさん） */
+export function ensembleSize(polyphony, baseTracks = 4, mode = 'clean') {
+  return baseTracks + (MODES[mode] || CLEAN).filter((l) => polyphony >= l.min).length;
 }
 
 /**
  * 元の曲から、音数に合わせて楽器を増やした曲を作る。
  * 元のトラックはそのまま先頭に残る（順番も同じ）。
  */
-export function expandEnsemble(song, polyphony) {
+export function expandEnsemble(song, polyphony, mode = 'clean') {
   const ctx = context(song);
   if (!ctx) return song;
   const extra = [];
-  for (const l of LAYERS) {
+  for (const l of MODES[mode] || CLEAN) {
     if (polyphony < l.min) continue;
     const notes = l.make(ctx).filter((n) => n.d > 0.02 && n.p >= 0 && n.p <= 127);
     if (notes.length < 2) continue;
