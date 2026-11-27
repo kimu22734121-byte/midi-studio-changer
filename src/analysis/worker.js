@@ -2,10 +2,11 @@
 import { transcribeAudio } from './audio-transcribe.js';
 
 self.onmessage = (e) => {
-  const { id, samples, sampleRate, options } = e.data;
+  const { id, samples, right, sampleRate, options } = e.data;
   try {
     const song = transcribeAudio(samples, sampleRate, {
       ...options,
+      right,
       onProgress: (p, msg) => self.postMessage({ id, type: 'progress', p, msg }),
     });
     self.postMessage({ id, type: 'done', song });

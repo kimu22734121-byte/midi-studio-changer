@@ -10,14 +10,21 @@ const MEL_LO = 45; // A2
 const MEL_HI = 84; // C6
 const NP = MEL_HI - MEL_LO + 1;
 
-export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録音した曲', source = 'audio' } = {}) {
+export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録音した曲', source = 'audio', right = null } = {}) {
   const maxLen = Math.floor(sr * 60 * 8);
-  const x = Float32Array.from(input.length > maxLen ? input.subarray(0, maxLen) : input);
+  const n = Math.min(input.length, maxLen, right ? right.length : Infinity);
+  // x＝真ん中（左右を足したもの）、side＝左右の差（左右に広がった伴奏が多く入る）
+  const x = new Float32Array(n);
+  const side = right ? new Float32Array(n) : null;
+  for (let i = 0; i < n; i++) {
+    if (right) { x[i] = (input[i] + right[i]) / 2; side[i] = (input[i] - right[i]) / 2; } else x[i] = input[i];
+  }
   let peak = 0;
   for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]));
   if (x.length < sr * 3) throw new Error('曲が短すぎます（3秒以上にしてください）');
   if (peak < 1e-3) throw new Error('音がほとんど入っていないようです');
   for (let i = 0; i < x.length; i++) x[i] /= peak;
+  if (side) for (let i = 0; i < side.length; i++) side[i] /= peak;
 
   // ---------- 1. リズム用の細かい解析（音の出だしを探す） ----------
   onProgress(0.02, 'リズムを聴き取っています…');
@@ -110,22 +117,31 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const bassC = new Float32Array(framesB * 12);
   const energy = new Float32Array(framesB);
   const magB = new Float64Array(nB / 2);
+  const magS = side ? new Float64Array(nB / 2) : null;
+  const fS2 = side ? makeFFT(nB) : null;
+  // メロディ（歌）用：真ん中の音から左右の差を引く ＝ 真ん中にある歌が浮かび上がる
+  // （左右に広がったピアノ・弦などが弱まる。左右の差の 1.5 倍を引くのが、試した中で一番よかった）
+  // ※ ドラムを弱める処理（時間方向の中央値）も試したが、歌の出だしまでぼけて成績が下がったので入れていない
+  const CENTER = 1.5;
+  const melMag = new Float64Array(nB / 2);
   for (let f = 0; f < framesB; f++) {
     fB.magnitude(x, f * hopB - nB / 2, magB);
-    let e = 0;
-    for (let i = 0; i < nB / 2; i++) { magB[i] = Math.sqrt(magB[i]); e += magB[i]; }
-    energy[f] = e;
+    if (side) fS2.magnitude(side, f * hopB - nB / 2, magS);
+    for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
     for (let pi = 0; pi < NP; pi++) {
       let s = 0;
       for (let h = 0; h < H; h++) {
         const r = ranges[pi * H + h];
         if (!r) break;
         let m = 0;
-        for (let b = r[0]; b <= r[1]; b++) if (magB[b] > m) m = magB[b];
+        for (let b = r[0]; b <= r[1]; b++) if (melMag[b] > m) m = melMag[b];
         s += hw[h] * m;
       }
       sal[f * NP + pi] = s;
     }
+    let e = 0;
+    for (let i = 0; i < nB / 2; i++) { magB[i] = Math.sqrt(magB[i]); e += magB[i]; }
+    energy[f] = e;
     // 山になっている周波数だけを数える（倍音のにじみを減らす）
     let bmax = 0;
     for (let b = 1; b < nB / 2 - 1; b++) {
@@ -257,7 +273,7 @@ function trackMelody(sal, frames, hopT, q, step) {
         let c;
         if (r === U && s === U) c = 0;
         else if (r === U || s === U) c = 0.2;
-        else c = Math.min(0.6, 0.035 * Math.abs(r - s));
+        else c = Math.min(0.7, 0.1 + 0.04 * Math.abs(r - s));
         const v = score[r] - c;
         if (v > best) { best = v; arg = r; }
       }
@@ -294,6 +310,7 @@ function trackMelody(sal, frames, hopT, q, step) {
     f = g;
   }
 
+  mergeWobble(segs, hopT);
   const notes = [];
   for (const sg of segs) {
     const t0 = sg.a * hopT, t1 = sg.b * hopT;
@@ -370,4 +387,33 @@ function detectChords(chroma, bassC, energy, frames, hopT, offset, beat, phaseBe
     prev = best;
   }
   return { list, score: counted ? total / counted : 0 };
+}
+
+/**
+ * 歌の揺れ（ビブラート）やしゃくりで、となりの高さに一瞬ずれた短い切れ端を、
+ * つながっている長い方の音にまとめる（音符が細切れにならないように）
+ */
+function mergeWobble(segs, hopT) {
+  const short = 0.13 / hopT; // 130ms より短い切れ端
+  segs.sort((a, b) => a.a - b.a);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let i = 0; i < segs.length; i++) {
+      const s = segs[i];
+      const len = s.b - s.a;
+      if (len >= short) continue;
+      const prev = segs[i - 1], next = segs[i + 1];
+      const near = (o) => o && Math.abs(o.p - s.p) <= 2 && Math.abs((o.a < s.a ? o.b : o.a) - (o.a < s.a ? s.a : s.b)) <= 1;
+      const cands = [prev, next].filter(near);
+      if (!cands.length) continue;
+      const host = cands.reduce((x, y) => (y.b - y.a > x.b - x.a ? y : x));
+      host.a = Math.min(host.a, s.a);
+      host.b = Math.max(host.b, s.b);
+      host.sum += s.sum;
+      segs.splice(i, 1);
+      changed = true;
+      break;
+    }
+  }
 }
