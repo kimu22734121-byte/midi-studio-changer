@@ -149,8 +149,9 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       const n = drumNotes[i];
       if (n.p === 39 && (!ok || n.k % 4 !== 0 || (n.k / 4) % 2 !== dom)) drumNotes.splice(i, 1);
     }
-    for (const n of drumNotes) { delete n.k; delete n.w; }
   }
+  thinCymbals(drumNotes, beat);
+  for (const n of drumNotes) { delete n.k; delete n.w; }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
   const nB = 4096, hopB = 512;
@@ -604,4 +605,68 @@ function removeRepeatingKick(spec, NBB, frames, hopT, kickTimes, beat, ranges, b
     bassSalienceFrame(clean, ranges, out, 0);
     for (let i = 0; i < NBASS; i++) bsal[f * NBASS + i] = out[i];
   }
+}
+
+/**
+ * ハイハット・シンバルの出すぎを間引く（同じ音が機関銃のように続かないように）。
+ * n.k は 16分音符の位置。1小節＝16個。
+ *  - ハイハット：1小節に 9 個以上（16分でびっしり）で、速い曲（1秒に9回より細かい）か、間の音（16分の裏）が
+ *    表の音よりずっと弱いときは、雑音（ギターのジャーン・歌のサ行・残響）を拾っていることが多いので、8分の位置だけ残す
+ *  - 同じ位置の閉じたハイハットと開いたハイハットは、強い方だけ
+ *  - シンバル：1小節に1回まで。半分より多くの小節で鳴っているなら、いちばん多い位置のものを 2小節に1回まで
+ */
+export function thinCymbals(notes, beat = 0.5) {
+  const del = new Set();
+  const bars = new Map();
+  for (const n of notes) {
+    if (n.p !== 42 && n.p !== 46 && n.p !== 49) continue;
+    const b = Math.floor(n.k / 16);
+    if (!bars.has(b)) bars.set(b, []);
+    bars.get(b).push(n);
+  }
+  for (const list of bars.values()) {
+    const hats = list.filter((n) => n.p === 42 || n.p === 46);
+    // 同じ位置の閉じた／開いたハイハット
+    const at = new Map();
+    for (const h of hats) {
+      const o = at.get(h.k);
+      if (!o) at.set(h.k, h);
+      else if (h.w > o.w) { del.add(o); at.set(h.k, h); } else del.add(h);
+    }
+    const left = hats.filter((h) => !del.has(h));
+    if (left.length > 8) {
+      const avgW = (a) => (a.length ? a.reduce((x, h) => x + h.w, 0) / a.length : 0);
+      const odd = left.filter((h) => h.k % 2), even = left.filter((h) => !(h.k % 2));
+      if (4 / beat > 9 || avgW(odd) < 0.5 * avgW(even)) for (const h of odd) del.add(h);
+    }
+    const cym = list.filter((n) => n.p === 49);
+    if (cym.length > 1) {
+      const keep = cym.reduce((a, b) => (b.w > a.w ? b : a));
+      for (const c of cym) if (c !== keep) del.add(c);
+    }
+  }
+  // バスドラと同じ位置のハイハット：バスドラのアタックの「カチッ」を拾ったもの。
+  // バスドラと重ならないハイハットよりはっきり弱いなら外す（本当に一緒に叩いているなら、同じくらいの強さになる）
+  {
+    const kicks = new Set(notes.filter((n) => n.p === 36).map((n) => n.k));
+    const hats = notes.filter((n) => (n.p === 42 || n.p === 46) && !del.has(n));
+    const onK = hats.filter((h) => kicks.has(h.k)), offK = hats.filter((h) => !kicks.has(h.k));
+    const avgW = (a) => a.reduce((x, h) => x + h.w, 0) / (a.length || 1);
+    if (onK.length >= 4 && offK.length >= 4) {
+      const ref = avgW(offK);
+      for (const h of onK) if (h.w < 0.85 * ref) del.add(h);
+    }
+  }
+  const cyms = notes.filter((n) => n.p === 49 && !del.has(n));
+  if (bars.size && cyms.length > Math.max(2, bars.size * 0.5)) {
+    const pos = new Map();
+    for (const c of cyms) pos.set(c.k % 16, (pos.get(c.k % 16) || 0) + 1);
+    const best = [...pos].sort((a, b) => b[1] - a[1])[0][0];
+    let last = -Infinity;
+    for (const c of cyms.sort((a, b) => a.k - b.k)) {
+      if (c.k % 16 !== best || c.k - last < 32) del.add(c);
+      else last = c.k;
+    }
+  }
+  for (let i = notes.length - 1; i >= 0; i--) if (del.has(notes[i])) notes.splice(i, 1);
 }
