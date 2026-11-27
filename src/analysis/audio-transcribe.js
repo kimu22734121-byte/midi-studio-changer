@@ -4,7 +4,7 @@
 import { makeFFT } from './fft.js';
 import { createSong } from '../core/song.js';
 import { buildAccompaniment, voiceChord } from '../core/chords.js';
-import { bassRanges, bassSalienceFrame, trackBass, NBASS, chordsByBeat, compOnsets, classifyDrums } from './instruments.js';
+import { bassRanges, bassSalienceFrame, trackBass, NBASS, chordsByBeat, compOnsets, classifyDrums, pickPeaks, bandRanges, bandFrame, trackBand, MAX_BAND_NOTES } from './instruments.js';
 
 export const ANALYSIS_SR = 22050;
 const MEL_LO = 45; // A2
@@ -50,8 +50,23 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const spread = new Float32Array(framesS); // 中域で同時に強くなった周波数の割合（スネアらしさ）
   let mag = new Float64Array(nS / 2), prev = new Float64Array(nS / 2);
   let lmag = new Float64Array(nS / 2), lprev = new Float64Array(nS / 2);
+  // ベースの弾き直し用：真ん中の音（左右に広がったピアノ・ギターを除く）の 100〜400Hz（バスドラはもっと低い）
+  const bassH = new Float32Array(framesS);
+  const bA = binS(100), bB = binS(400);
+  const magSide = side ? new Float64Array(nS / 2) : null;
+  const fSide = side ? makeFFT(nS) : null;
+  const cPrev = new Float64Array(bB + 1);
   for (let f = 0; f < framesS; f++) {
     fS.magnitude(x, f * hopS - nS / 2, mag);
+    if (side) fSide.magnitude(side, f * hopS - nS / 2, magSide);
+    let bh = 0;
+    for (let i = bA; i <= bB; i++) {
+      const c = Math.sqrt(side ? Math.max(0, mag[i] - 1.5 * magSide[i]) : mag[i]);
+      const d = c - cPrev[i];
+      if (d > 0) bh += d;
+      cPrev[i] = c;
+    }
+    bassH[f] = bh;
     for (let i = 0; i < nS / 2; i++) lmag[i] = Math.log1p(100 * mag[i]);
     for (const k in bands) {
       const [a, b] = bands[k];
@@ -132,6 +147,12 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const sideFlux = side ? new Float32Array(framesB) : null;
   const sLo = Math.round(150 / binHz), sHi = Math.round(2000 / binHz);
   const sPrev = side ? new Float64Array(sHi + 1) : null;
+  // バンド（ギター・キーボード）が実際に弾いている音：左右の差の音（歌・ベース・バスドラは真ん中なので入らない）で探す
+  const bRangesBand = side ? bandRanges(binHz) : null;
+  const bandTop = side ? Math.min(nB / 2 - 1, Math.ceil(6200 / binHz)) : 0;
+  const bandMag = side ? new Float64Array(bandTop + 1) : null;
+  const bandP = side ? new Uint8Array(framesB * MAX_BAND_NOTES) : null;
+  const bandS = side ? new Float32Array(framesB * MAX_BAND_NOTES) : null;
   for (let f = 0; f < framesB; f++) {
     fB.magnitude(x, f * hopB - nB / 2, magB);
     if (side) fS2.magnitude(side, f * hopB - nB / 2, magS);
@@ -142,6 +163,8 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       let fl = 0;
       for (let b = sLo; b <= sHi; b++) { const v = Math.sqrt(magS[b]); const d = v - sPrev[b]; if (d > 0) fl += d; sPrev[b] = v; }
       sideFlux[f] = fl;
+      for (let b = 0; b <= bandTop; b++) bandMag[b] = Math.sqrt(magS[b]);
+      bandFrame(bandMag, bRangesBand, bandP, bandS, f * MAX_BAND_NOTES);
     }
     for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
     for (let pi = 0; pi < NP; pi++) {
@@ -184,7 +207,8 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   }
   // ベース
   onProgress(0.86, 'ベースを聴き取っています…');
-  const bass = trackBass(bsal, framesB, hopB / sr, q, step);
+  const bassOnsets = new Set(pickPeaks(bassH, Math.round(0.08 / hopT), 0.25).map(({ i }) => Math.round((i * hopS) / hopB)));
+  const bass = trackBass(bsal, framesB, hopB / sr, q, step, bassOnsets);
   const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
   const bassPcAt = (t) => {
     if (!useBass) return -1;
@@ -202,7 +226,17 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     const acc = buildAccompaniment(chords, bpm, { drums: false });
     // 伴奏：左右に広がった楽器が鳴ったタイミングで和音を鳴らす（わからなければ伸ばす）
     const onsets = compOnsets(sideFlux, hopB / sr, x.length / sr, beat);
-    tracks.push(onsets ? { name: '伴奏（和音）', role: 'chords', notes: compNotes(chords, onsets, offset, beat) } : acc.find((t) => t.role === 'chords'));
+    // 伴奏：①ギター・キーボードが実際に弾いている音 → ②和音を伴奏のリズムで → ③和音を伸ばす（わかるものを使う）
+    let band = [];
+    if (side) {
+      const onF = new Set((onsets || []).map((t) => Math.round(t / (hopB / sr))));
+      band = trackBand(bandP, bandS, framesB, hopB / sr, q, step, onF);
+    }
+    const bars = x.length / sr / (beat * 4);
+    // 和音に含まれる音だけ残す（ひずんだギターの倍音などから生まれた余計な音を除く）
+    band = keepChordTones(band, chords, beat);
+    if (band.length >= bars * 2) tracks.push({ name: '伴奏（ギター・キーボードの音）', role: 'chords', notes: band });
+    else tracks.push(onsets ? { name: '伴奏（和音）', role: 'chords', notes: compNotes(chords, onsets, offset, beat) } : acc.find((t) => t.role === 'chords'));
     // ベース：聴き取れたら実際の音、だめなら和音の根っこ
     tracks.push(useBass ? { name: 'ベース', role: 'bass', notes: bass.notes } : acc.find((t) => t.role === 'bass'));
   } else if (useBass) tracks.push({ name: 'ベース', role: 'bass', notes: bass.notes });
@@ -228,13 +262,21 @@ function estimateTempo(env, hopT) {
   const N = env.length;
   let best = -1, bestLag = Math.round(0.5 / hopT);
   const minLag = Math.floor(60 / 180 / hopT), maxLag = Math.ceil(60 / 70 / hopT);
-  for (let lag = minLag; lag <= maxLag; lag++) {
+  const ac = (lag) => {
     let s = 0;
     for (let i = 0; i + lag < N; i++) s += env[i] * env[i + lag];
-    s /= N - lag;
+    return s / (N - lag);
+  };
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    const s = ac(lag);
     const b = 60 / (lag * hopT);
     const w = Math.exp(-0.5 * (Math.log2(b / 120) / 0.8) ** 2);
     if (s * w > best) { best = s * w; bestLag = lag; }
+  }
+  // 半分の速さと取り違えやすい：遅すぎる（88未満）のに、倍の速さでも拍がよく合うなら倍にする
+  if (60 / (bestLag * hopT) < 88) {
+    const half = Math.round(bestLag / 2);
+    if (60 / (half * hopT) <= 170 && ac(half) >= 0.6 * ac(bestLag)) bestLag = half;
   }
   const b0 = 60 / (bestLag * hopT);
   let bestScore = -1, bpm = b0, phase = 0;
@@ -394,4 +436,15 @@ function compNotes(chords, onsets, offset, beat) {
     });
   }
   return out;
+}
+
+/** 見つけた伴奏の音のうち、その時の和音に含まれる音だけを残す */
+function keepChordTones(notes, chords, beat) {
+  return notes.filter((n) => {
+    const b = n.t / beat + 0.01;
+    const c = chords.find((x) => x.start <= b && b < x.start + x.beats);
+    if (!c) return false;
+    const pcs = c.chord.intervals.map((iv) => (c.chord.root + iv) % 12);
+    return pcs.includes(n.p % 12);
+  });
 }

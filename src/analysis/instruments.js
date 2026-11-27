@@ -37,7 +37,7 @@ export function bassSalienceFrame(mag, ranges, out, offset) {
 }
 
 /** ベースの音符を取り出す（なめらかにつなぐ → 同じ高さの続きは1音、弾き直しで分ける） */
-export function trackBass(bsal, frames, hopT, q, step) {
+export function trackBass(bsal, frames, hopT, q, step, onsets = new Set()) {
   const maxes = new Float32Array(frames);
   for (let f = 0; f < frames; f++) {
     let m = 0;
@@ -79,9 +79,18 @@ export function trackBass(bsal, frames, hopT, q, step) {
   while (f < frames) {
     if (path[f] === U) { f++; continue; }
     const p = path[f];
-    let start = f, runMax = 0, dipped = false, sum = 0;
+    let start = f, runMax = 0, dipped = false, sum = 0, first = true;
     while (f < frames && path[f] === p) {
       const v = S[f * NBASS + p];
+      // 弾き直し：低い音が新しく鳴り始めたところ（同じ高さの刻み）
+      // ただし、ベースの高さの成分そのものが強くなったときだけ（バスドラが鳴っただけでは分けない）
+      const rise = f + 3 < frames && f >= 2 ? S[(f + 3) * NBASS + p] / Math.max(1e-6, S[(f - 1) * NBASS + p]) : 0;
+      if (f > start + 1 && (onsets.has(f) || onsets.has(f - 1)) && !onsets.has(f - 2) && rise > 1.0) {
+        // 長い時間幅で調べているので、音は実際より少し早く始まって見える。
+        // 出だしの直後（0.2秒以内）の目印なら、手前の短い部分は捨てて、目印の位置から始める
+        if (!(first && (f - start) * hopT < 0.2)) segs.push({ a: start, b: f, p, sum });
+        start = f; runMax = v; dipped = false; sum = 0; first = false;
+      }
       if (v > runMax) runMax = v;
       if (v < runMax * 0.5) dipped = true;
       else if (dipped && v > runMax * 0.75) {
@@ -254,7 +263,7 @@ export function classifyDrums(flux, E, spread, hopT) {
   for (const { i, s } of pickPeaks(flux.low, Math.round(0.08 / hopT), 0.3)) {
     const top = peakNear(E.low, i);
     if (top <= 0) continue;
-    if (after(E.low, i, 0.13) > top * 0.45) continue; // 長く続く → ベース
+    if (after(E.low, i, 0.13) > top * 0.3) continue; // 長く続く → ベース
     if (flux.low[i] < flux.mid[i] * 0.8) continue;
     out.push({ i, p: 36, s });
     kickF.add(i);
@@ -324,4 +333,114 @@ const refCache = new WeakMap();
 function pickRef(arr) {
   if (!refCache.has(arr)) refCache.set(arr, pct(arr, 0.95) || 1);
   return refCache.get(arr);
+}
+
+// ---------------- バンド（ギター・キーボードなどが実際に弾いている音） ----------------
+export const BAND_LO = 40; // E2
+export const BAND_HI = 88; // E6
+export const NBAND = BAND_HI - BAND_LO + 1;
+const NH = 8;
+const NW = Array.from({ length: NH }, (_, h) => 0.8 ** h);
+export const MAX_BAND_NOTES = 6;
+
+/** 伴奏の音を探す準備（4096点・左右の差の音で見る） */
+export function bandRanges(binHz) {
+  const ranges = [];
+  for (let i = 0; i < NBAND; i++) {
+    const f0 = 440 * 2 ** ((BAND_LO + i - 69) / 12);
+    for (let h = 1; h <= NH; h++) {
+      const f = f0 * h;
+      if (f > 6000) { ranges.push(null); continue; }
+      const w = Math.max(1, (f * 0.02) / binHz);
+      ranges.push([Math.max(1, Math.floor(f / binHz - w)), Math.ceil(f / binHz + w)]);
+    }
+  }
+  return ranges;
+}
+
+/**
+ * 1フレームで、同時に鳴っている音を探す：いちばん目立つ音を見つけたら、その音と倍音を弱めて、次を探す（最大6音）。
+ * mag は sqrt した振幅（書き換えるのでコピーを渡す）。out[f*MAX+k] に { pitchIndex, 強さ } を入れる
+ */
+export function bandFrame(mag, ranges, outP, outS, base) {
+  let firstMax = 0;
+  for (let k = 0; k < MAX_BAND_NOTES; k++) {
+    let best = -1, bs = 0;
+    for (let i = 0; i < NBAND; i++) {
+      let s = 0;
+      for (let h = 0; h < NH; h++) {
+        const r = ranges[i * NH + h];
+        if (!r) break;
+        let m = 0;
+        for (let b = r[0]; b <= r[1]; b++) if (mag[b] > m) m = mag[b];
+        s += NW[h] * m;
+      }
+      if (s > bs) { bs = s; best = i; }
+    }
+    if (best < 0 || (k > 0 && bs < firstMax * 0.2)) break;
+    if (k === 0) firstMax = bs;
+    outP[base + k] = best + 1; // 0 は「なし」
+    outS[base + k] = bs;
+    // 見つけた音とその倍音を弱める（ほかの音と重なる倍音もあるので、消しきらない）
+    for (let h = 0; h < NH; h++) {
+      const r = ranges[best * NH + h];
+      if (!r) break;
+      for (let b = r[0]; b <= r[1]; b++) mag[b] *= 0.15;
+    }
+  }
+}
+
+/** 見つけた音をつなげて音符にする（伴奏が鳴り始めたところ onsets で区切る） */
+export function trackBand(outP, outS, frames, hopT, q, step, onsets) {
+  // 強さの基準：各フレームでいちばん目立った音の強さの、上から1割あたり
+  const tops = [];
+  for (let f = 0; f < frames; f++) if (outP[f * MAX_BAND_NOTES]) tops.push(outS[f * MAX_BAND_NOTES]);
+  if (tops.length < 10) return [];
+  tops.sort((a, b) => a - b);
+  const ref = tops[Math.floor(tops.length * 0.9)];
+  const th = ref * 0.22;
+  const on = new Float32Array(frames * NBAND);
+  for (let f = 0; f < frames; f++) {
+    for (let k = 0; k < MAX_BAND_NOTES; k++) {
+      const pi = outP[f * MAX_BAND_NOTES + k];
+      if (!pi) break;
+      const sv = outS[f * MAX_BAND_NOTES + k];
+      if (sv >= th) on[f * NBAND + pi - 1] = sv;
+    }
+  }
+  const notes = [];
+  for (let i = 0; i < NBAND; i++) {
+    let f = 0;
+    while (f < frames) {
+      if (!on[f * NBAND + i]) { f++; continue; }
+      let start = f, sum = 0, first = true;
+      const push = (a, b) => {
+        if ((b - a) * hopT < 0.045) return;
+        const qs = q(a * hopT);
+        let qe = q(b * hopT);
+        if (qs < 0) return;
+        if (qe <= qs) qe = qs + 1;
+        notes.push({ qs, qe, p: BAND_LO + i, v: Math.round(60 + 45 * Math.min(1, sum / Math.max(1, b - a) / ref)) });
+      };
+      // 1フレームの切れ目は続きとみなす
+      while (f < frames && (on[f * NBAND + i] || (f + 1 < frames && on[(f + 1) * NBAND + i]))) {
+        if (f > start + 1 && onsets.has(f) && !onsets.has(f - 1)) {
+          if (!(first && (f - start) * hopT < 0.12)) push(start, f);
+          start = f; sum = 0; first = false;
+        }
+        sum += on[f * NBAND + i];
+        f++;
+      }
+      push(start, f);
+    }
+  }
+  // 同じ高さの重なりをまとめる
+  notes.sort((a, b) => a.p - b.p || a.qs - b.qs);
+  const out = [];
+  for (const n of notes) {
+    const last = out[out.length - 1];
+    if (last && last.p === n.p && n.qs < last.qe) { last.qe = Math.max(last.qe, n.qe); continue; }
+    out.push(n);
+  }
+  return out.sort((a, b) => a.qs - b.qs).map((n) => ({ t: n.qs * step, d: (n.qe - n.qs) * step * 0.95, p: n.p, v: n.v }));
 }
