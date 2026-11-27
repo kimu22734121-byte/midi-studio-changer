@@ -40,3 +40,21 @@ test('左右が混ざった音でも、ベースとドラムは聴き取れる',
   assert.ok(r.bass.rec >= 0.85, `ベース ${JSON.stringify(r.bass)}`);
   assert.ok(r.drums.snare.rec >= 0.9, `スネア ${JSON.stringify(r.drums.snare)}`);
 });
+
+test('高い音が鳴り続ける曲でも、シンバルを出しすぎない', () => {
+  for (const opt of [{ dense: true }, { dense: true, bpm: 130 }, { dense: true, gain: 0.08, tap: true }]) {
+    const { L, R, sr, truth } = synthBandSong(opt);
+    const song = transcribeAudio(L, sr, { right: R });
+    const crashes = song.tracks.find((t) => t.role === 'drums').notes.filter((n) => n.p === 49).length;
+    const real = truth.drums.filter((d) => d.kind === 'crash').length;
+    assert.ok(crashes <= real * 2, `シンバル ${crashes} 回（本当は ${real} 回）`);
+    const r = analyze(opt);
+    assert.ok(r.drums.hat.rec >= 0.85, `ハイハット ${JSON.stringify(r.drums.hat)}`);
+  }
+});
+
+test('音が小さく、一瞬だけ大きな音がある動画でも聴き取れる', () => {
+  const r = analyze({ gain: 0.05, tap: true });
+  assert.ok(r.bass.rec >= 0.9, `ベース ${JSON.stringify(r.bass)}`);
+  assert.ok(r.drums.snare.rec >= 0.9, `スネア ${JSON.stringify(r.drums.snare)}`);
+});

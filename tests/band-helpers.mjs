@@ -7,7 +7,9 @@ const CH = {
 // 1小節ごと（[名前, 拍数] の並び）。4小節目・8小節目は途中で変わる
 const PROG = [[['C', 4]], [['Am7', 4]], [['Fmaj7', 4]], [['Dm7', 2], ['G7', 2]], [['C', 4]], [['Em7', 4]], [['F', 4]], [['Dm7', 2], ['G', 2]]];
 
-export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, vocal = true } = {}) {
+// dense：ハイハットを16分で細かく刻み、残響のような高い音を薄く鳴らし続ける（本物の曲に近い）
+// gain：全体の音量／ tap：最初に一瞬だけ大きな音（画面収録のタップ音など）
+export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, vocal = true, dense = false, gain = 1, tap = false } = {}) {
   const beat = 60 / bpm;
   const t0 = 0.5;
   const len = Math.ceil((t0 + bars * 4 * beat + 1.5) * sr);
@@ -89,10 +91,11 @@ export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, voca
     const tb = t0 + bar * 4 * beat;
     for (const kb of [0, 1.5, 2]) { kick(tb + kb * beat); truth.drums.push({ t: tb + kb * beat, kind: 'kick' }); }
     for (const sb of [1, 3]) { snare(tb + sb * beat); truth.drums.push({ t: tb + sb * beat, kind: 'snare' }); }
-    for (let h = 0; h < 8; h++) {
-      const open = h === 7;
-      hat(tb + h * beat / 2, open);
-      truth.drums.push({ t: tb + h * beat / 2, kind: 'hat' });
+    const div = dense ? 16 : 8;
+    for (let h = 0; h < div; h++) {
+      const open = h === div - 1;
+      hat(tb + (h * 4 * beat) / div, open);
+      truth.drums.push({ t: tb + (h * 4 * beat) / div, kind: 'hat' });
     }
     if (bar % 4 === 0) { crash(tb); truth.drums.push({ t: tb, kind: 'crash' }); }
   }
@@ -115,6 +118,13 @@ export function synthBandSong({ sr = 22050, bpm = 100, bars = 8, seed = 11, voca
       }
     }
   }
+  if (dense) {
+    // 残響・歌の「サ行」のような、ずっと続く薄い高い音
+    let prev = 0;
+    for (let i = 0; i < len; i++) { const n = rnd(); const v = 0.025 * (n - prev) * (0.7 + 0.3 * Math.sin(i / sr * 3)); L[i] += v; R[i] += v * 0.9; prev = n; }
+  }
+  if (gain !== 1) for (let i = 0; i < len; i++) { L[i] *= gain; R[i] *= gain; }
+  if (tap) for (let i = 0; i < 0.01 * sr; i++) { const v = 0.95 * Math.exp(-i / sr * 400) * (i % 2 ? 1 : -1); L[Math.floor(0.1 * sr) + i] = v; R[Math.floor(0.1 * sr) + i] = v; }
   return { L, R, sr, bpm, truth, t0 };
 }
 

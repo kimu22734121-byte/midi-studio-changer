@@ -28,5 +28,6 @@ export async function decodeToMono(arrayBuffer, targetRate) {
     if (right) diff = Math.max(diff, Math.abs(samples[i] - right[i]));
   }
   const useRight = right && diff > peak * 0.02 ? right : null;
-  return { samples, right: useRight, sampleRate: targetRate, duration: buf.duration, silent: peak < 1e-3 };
+  // とても小さい音でも、解析のときに音量をそろえるので使える（本当に無音のときだけ止める）
+  return { samples, right: useRight, sampleRate: targetRate, duration: buf.duration, silent: peak < 2e-4 };
 }
