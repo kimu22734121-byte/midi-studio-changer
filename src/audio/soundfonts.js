@@ -27,6 +27,16 @@ export const SETS = [
     roles: { melody: 80, chords: 48, bass: 38, other: 0 }, fx: { reverb: { wet: 0.2, time: 1.8 } },
   },
   {
+    id: 'real', icon: '🎼', label: '生音（大きめ・全楽器）', desc: 'MuseScore の録音音源。ピアノ・ギター・ベース・管楽器・弦など128種類とドラム8種類を、本物に近い音で',
+    file: 'soundfonts/midichen-real.sf2', size: 60.4, gain: 0.94,
+    roles: { melody: 65, chords: 0, bass: 33, other: 24 }, fx: { reverb: { wet: 0.22, time: 2.0 } },
+  },
+  {
+    id: 'edm', icon: '💿', label: '電子音（ユーロビート・EDM）', desc: '左右に広がる分厚いスーパーソー・プラック・アシッドベース・808/909風ドラム・クラップ',
+    file: 'soundfonts/midichen-edm.sf2', size: 26.9, gain: 0.47,
+    roles: { melody: 81, chords: 48, bass: 32, other: 24 }, fx: { reverb: { wet: 0.2, time: 1.8 }, echo: { time: 0.3, feedback: 0.25, wet: 0.1 } },
+  },
+  {
     id: 'synth', icon: '🌌', label: 'シンセ', desc: 'スーパーソー・FMエレピ・アナログベースなど、キラキラした電子音',
     file: 'soundfonts/midichen-synth.sf2', size: 3.0, gain: 0.69,
     roles: { melody: 81, chords: 48, bass: 32, other: 4 }, fx: { chorus: 0.35, reverb: { wet: 0.22, time: 2.2 } },
@@ -86,8 +96,17 @@ const LABELS = {
     48: 'オーケストラの弦（合奏）', 49: 'ゆったりした弦', 50: 'シンセの弦', 52: '合唱「アー」', 53: '声「ウー」', 55: 'オーケストラヒット',
     59: 'ミュートトランペット', 60: 'ホルン', 61: '金管合奏', 19: '教会オルガン',
   },
+  edm: {
+    0: 'ダンスピアノ', 4: 'FMエレピ', 8: 'ベルプラック', 16: 'ハウスオルガン', 24: 'トランスプラック', 29: 'シンセギター',
+    32: 'ユーロビートベース', 33: 'サブベース', 34: 'アシッドベース', 38: 'リースベース', 39: '矩形波ベース',
+    40: 'シンセストリングス', 48: 'スーパーソー', 49: 'スーパーソーパッド', 50: 'フーバー', 52: '声パッド', 55: 'オーケストラヒット',
+    61: 'シンセブラス', 62: 'ブラススタブ', 65: 'シンセリード（木管風）', 73: 'シンセフルート',
+    80: '矩形波リード', 81: 'のこぎり波リード', 82: 'やわらかリード', 84: 'ピコピコリード', 85: 'ボイスリード', 86: '5度リード', 87: 'ベース＋リード',
+    89: 'ウォームパッド', 90: 'ポリシンセ', 91: '宇宙パッド', 95: 'スイープパッド', 98: '上がっていく効果音',
+  },
   jazz: { 0: 'グランドピアノ', 1: 'グランドピアノ（明るめ）', 32: 'ウッドベース' },
 };
+const EDM_KITS = { 0: 'EDMドラム', 24: '909風ドラム', 25: '808風ドラム', 26: 'ダンスドラム' };
 const KIT_LABELS = { chip: 'ファミコンドラム', synth: '電子ドラム', orchestra: 'オーケストラ打楽器', jazz: 'ジャズドラム' };
 const GM_KITS = {
   0: 'スタンダードドラム', 1: 'スタンダードドラム2', 8: 'ルームドラム', 16: 'パワードラム', 24: 'エレクトリックドラム', 25: 'TR-808風ドラム',
@@ -96,6 +115,7 @@ const GM_KITS = {
 
 export function presetLabel(setId, preset) {
   const key = SETS.find((x) => x.id === setId)?.labels || setId;
+  if (preset.bank === 128 && key === 'edm') return EDM_KITS[preset.program] || preset.name;
   if (preset.bank === 128) return KIT_LABELS[key] || GM_KITS[preset.program] || `ドラム：${preset.name}`;
   return LABELS[key]?.[preset.program] || GM_NAMES[preset.program] || preset.name;
 }

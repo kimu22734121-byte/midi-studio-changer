@@ -125,7 +125,8 @@ src/audio/            音を鳴らす部分（Web Audio）
   soundfonts.js       サウンドフォントのセット一覧（追加するときはここに1件足す）
 soundfonts/           同梱のサウンドフォント（ライセンスは README）
 tools/make-soundfonts.mjs  アプリ独自セット（chip/synth）を作るスクリプト
-tools/build-orchestra.mjs  MuseScore の MS Basic.sf3（MIT）からオーケストラのセットを作るスクリプト（ffmpeg が必要）
+tools/build-orchestra.mjs  MuseScore の MS Basic.sf3（MIT）からオーケストラ／生音（full）のセットを作るスクリプト（ffmpeg が必要）
+tools/make-edm.mjs    電子音（ユーロビート・EDM）のセットを作るスクリプト
 tools/build-sample-soundfonts.mjs  録音サンプル集（CC0/CC-BY）からジャズのセットを作るスクリプト（git・ffmpeg が必要）
 tests/                node --test で動くテスト
 ```
