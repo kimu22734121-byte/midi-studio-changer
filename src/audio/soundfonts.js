@@ -6,6 +6,7 @@ import { SoundFontBank } from './sf-bank.js';
 // roles：音声や楽譜テキストから作った曲（元の楽器が決まっていない曲）で、パートごとに使う楽器の番号
 // fx：響き（reverb）・コーラス（chorus）・やまびこ（echo）の量
 // gain：セットごとの音量の差をそろえるための倍率
+// choose：曲に合わせて楽器を選ぶ（src/core/instrument-choice.js。'real'＝生音・標準、'orchestra'＝オーケストラ）。roles はそのときは使わない
 export const SETS = [
   {
     id: 'wave', icon: '⚡', label: '軽い波形シンセ', desc: '読み込みなし・いちばん軽い。左右に広がる厚めのシンセとピコピコ音',
@@ -13,7 +14,7 @@ export const SETS = [
   },
   {
     id: 'orchestra', icon: '🎻', label: 'オーケストラ（豪華）', desc: 'スタジオで録音した弦・金管・木管・ハープ・ティンパニ・合唱。ホールの響き付き',
-    file: 'soundfonts/midichen-orchestra.sf2', size: 32.6, gain: 1.0,
+    file: 'soundfonts/midichen-orchestra.sf2', size: 32.6, gain: 1.0, choose: 'orchestra',
     roles: { melody: 40, chords: 48, bass: 32, other: 46 }, fx: { reverb: { wet: 0.42, time: 3.2 } },
   },
   {
@@ -23,12 +24,12 @@ export const SETS = [
   },
   {
     id: 'gm', icon: '🎹', label: '標準（いろいろな楽器）', desc: 'ピアノ・ギター・ストリングス・ドラムなど128種類。どんな曲にも合う',
-    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.85,
+    file: 'soundfonts/GeneralUser-GS.sf2', size: 32.3, gain: 1.85, choose: 'real',
     roles: { melody: 80, chords: 48, bass: 38, other: 0 }, fx: { reverb: { wet: 0.2, time: 1.8 } },
   },
   {
     id: 'real', icon: '🎼', label: '生音（大きめ・全楽器）', desc: 'MuseScore の録音音源。ピアノ・ギター・ベース・管楽器・弦など128種類とドラム8種類を、本物に近い音で',
-    file: 'soundfonts/midichen-real.sf2', size: 60.4, gain: 0.94,
+    file: 'soundfonts/midichen-real.sf2', size: 60.4, gain: 0.94, choose: 'real',
     roles: { melody: 65, chords: 0, bass: 33, other: 24 }, fx: { reverb: { wet: 0.22, time: 2.0 } },
   },
   {

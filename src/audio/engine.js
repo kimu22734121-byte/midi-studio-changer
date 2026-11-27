@@ -4,6 +4,7 @@
 // 音は「軽い波形シンセ」か「サウンドフォントのセット」のどちらかで鳴らす。
 import { planVoices, lowerBound, songDuration, lowerPolyphony, POLY_DEFAULT, defaultTone } from '../core/song.js';
 import { toneFromProgram } from '../core/midi-file.js';
+import { chooseInstruments } from '../core/instrument-choice.js';
 import { playTone, playDrum, isDrumKit, TONES } from './instruments.js';
 
 const LOOKAHEAD = 0.2; // 秒
@@ -165,12 +166,19 @@ export class Player {
   /** セットを変えたとき・曲を読み込んだときに、パートごとの楽器を決め直す（from より前のトラックはそのまま） */
   assignInstruments(from = 0) {
     if (!this.song) return;
-    const roles = this.set.roles || FALLBACK_ROLES;
+    let roles = this.set.roles || FALLBACK_ROLES;
+    let remap = {};
+    // 生音・オーケストラ・標準のセットは、曲に合わせて楽器を選ぶ
+    // （MIDI・MusicXML で元の楽器が全部決まっている曲はそのまま）
+    const needs = this.song.tracks.some((t) => !t.isDrum && (t.layer || t.program == null));
+    this.choice = this.bank && this.set.choose && needs ? chooseInstruments(this.song, this.set.choose) : null;
+    if (this.choice) ({ roles, remap } = this.choice);
     this.song.tracks.forEach((tr, i) => {
       if (i < from) return;
       const st = this.settings[i];
       st.tone = tr.tone || defaultTone(tr.role, tr.isDrum);
-      st.program = tr.isDrum ? (tr.program ?? 0) : (tr.program ?? roles[tr.role] ?? 0);
+      const prog = tr.layer && tr.program != null ? remap[tr.program] ?? tr.program : tr.program;
+      st.program = tr.isDrum ? (tr.program ?? 0) : (prog ?? roles[tr.role] ?? 0);
       st.preset = this.bank ? this.bank.preset(st.program, tr.isDrum) : null;
     });
   }
@@ -243,6 +251,10 @@ export class Player {
     if (!this.song || this.playing) return;
     await this.ensureContext();
     if (this.pos >= this.duration) this.pos = 0;
+    // 使う音を先に用意しておく（鳴らしながら用意すると、間に合わずに音が抜けることがある）
+    if (this.bank && this.bank.prepare) {
+      this.song.tracks.forEach((tr, i) => { if (this.settings[i].preset) this.bank.prepare(this.ctx, this.settings[i].preset, tr.notes); });
+    }
     this.startCtx = this.ctx.currentTime + 0.06;
     this.startPos = this.pos;
     this.ptr = lowerBound(this.events, this.pos);
@@ -307,8 +319,15 @@ export class Player {
       const at = this.startCtx + ev.t - this.startPos;
       if (at > horizon) break;
       this.ptr++;
-      if (at < now - 0.05) { if (!hidden) this.lag.late++; continue; }
-      const v = this.noteOn(ev.track, { when: Math.max(at, now), dur: ev.d, pitch: ev.p, vel: ev.v });
+      let dur = ev.d;
+      if (at < now - 0.05) {
+        if (!hidden) this.lag.late++;
+        // 少し遅れただけで、まだ伸ばしている途中の音は、残りの長さだけ鳴らす（音が抜けないように）
+        const left = at + ev.d - now;
+        if (at < now - 0.4 || left < 0.12 || this.song.tracks[ev.track]?.isDrum) continue;
+        dur = left;
+      }
+      const v = this.noteOn(ev.track, { when: Math.max(at, now), dur, pitch: ev.p, vel: ev.v });
       if (v) this.voices.push(v);
     }
     if (this.voices.length > 256) this.voices = this.voices.filter((v) => v.end > now);

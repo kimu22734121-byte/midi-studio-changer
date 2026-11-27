@@ -49,9 +49,22 @@ export class SoundFontBank {
     return b;
   }
 
+  /** 曲で使う音を先に用意する（再生を始める前に呼ぶ） */
+  prepare(ctx, preset, notes) {
+    const seen = new Set();
+    for (const n of notes) {
+      const k = `${n.p}:${n.v >> 3}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      for (const r of pickRegions(preset, n.p, n.v).regions) this.buffer(ctx, r);
+    }
+  }
+
   /** 1音鳴らす。戻り値は途中で止めるためのハンドル */
   noteOn(ctx, dest, preset, { when, dur, pitch, vel, channel = 0 }) {
-    const regions = preset.regions.filter((r) => pitch >= r.keyLo && pitch <= r.keyHi && vel >= r.velLo && vel <= r.velHi);
+    const found = pickRegions(preset, pitch, vel);
+    const regions = found.regions;
+    pitch = found.pitch;
     const voices = [];
     let end = when;
     for (const r of regions) {
@@ -134,3 +147,55 @@ export class SoundFontBank {
     };
   }
 }
+
+/**
+ * 鳴らす音（リージョン）を選ぶ。楽器の音が入っていない高さ・強さでも黙らないようにする。
+ *  - 強さのすき間：いちばん近い強さの音を使う
+ *  - 高さが楽器の音域の外：1オクターブずつ音域の中へ移して鳴らす（ドラムはそのまま）
+ *  - それでも見つからなければ、いちばん近い高さの音を引き伸ばして鳴らす
+ */
+export function pickRegions(preset, pitch, vel) {
+  const rs = preset.regions;
+  const at = (p) => {
+    const byKey = rs.filter((r) => p >= r.keyLo && p <= r.keyHi);
+    if (!byKey.length) return null;
+    const exact = byKey.filter((r) => vel >= r.velLo && vel <= r.velHi);
+    if (exact.length) return exact;
+    const dist = (r) => (vel < r.velLo ? r.velLo - vel : vel - r.velHi);
+    const best = Math.min(...byKey.map(dist));
+    return byKey.filter((r) => dist(r) === best);
+  };
+  let found = at(pitch);
+  if (found) return { regions: found, pitch };
+  if (!rs.length) return { regions: [], pitch };
+  if (preset.bank !== 128) {
+    const lo = Math.min(...rs.map((r) => r.keyLo)), hi = Math.max(...rs.map((r) => r.keyHi));
+    let p = pitch;
+    while (p > hi && p - 12 >= 0) p -= 12;
+    while (p < lo && p + 12 <= 127) p += 12;
+    found = at(p);
+    if (found) return { regions: found, pitch: p };
+  }
+  if (preset.bank === 128) {
+    // ドラムは、近い番号でも別の楽器になるので、代わりになる楽器だけを使う
+    for (const q of DRUM_ALT[pitch] || []) {
+      found = at(q);
+      if (found) return { regions: found, pitch: q };
+    }
+    return { regions: [], pitch };
+  }
+  // いちばん近い高さの音
+  const gap = (r) => (pitch < r.keyLo ? r.keyLo - pitch : pitch - r.keyHi);
+  const best = Math.min(...rs.map(gap));
+  const near = rs.filter((r) => gap(r) === best);
+  const p = pitch < near[0].keyLo ? near[0].keyLo : near[0].keyHi;
+  return { regions: at(p) || near, pitch };
+}
+
+// ドラムの代わりの楽器（GMの番号）：バスドラ・スネア・ハイハット・タム・シンバル・打楽器
+const DRUM_ALT = {
+  35: [36], 36: [35], 37: [38, 40], 38: [40, 37], 39: [38, 40], 40: [38], 41: [43, 45], 43: [41, 45], 45: [47, 43], 47: [45, 48], 48: [50, 47], 50: [48],
+  42: [44, 46], 44: [42], 46: [42], 49: [57, 52, 55], 57: [49, 52], 52: [49, 57], 55: [49, 57], 51: [59, 53], 59: [51], 53: [51],
+  54: [69, 70, 42], 56: [76, 37], 58: [39], 60: [61, 62], 61: [60, 63], 62: [63, 60], 63: [62, 64], 64: [63],
+  65: [66, 47], 66: [65, 45], 67: [68], 68: [67], 69: [70, 54, 42], 70: [69, 54], 75: [76, 37], 76: [77, 75, 37], 77: [76], 81: [80, 51], 80: [81],
+};

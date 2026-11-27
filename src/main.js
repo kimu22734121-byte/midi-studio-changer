@@ -404,6 +404,9 @@ function esc(s) {
 
 function renderTracks() {
   const list = $('#track-list');
+  const ch = player.choice;
+  $('#choice-info').hidden = !ch;
+  if (ch) $('#choice-info').textContent = `🎯 この曲（${ch.summary}）に合わせて、楽器を選びました。下の「パートごとの楽器」で変えることもできます。`;
   list.innerHTML = '';
   const addedCount = song.tracks.filter((t) => t.layer).length;
   let addedList = null;
@@ -420,8 +423,10 @@ function renderTracks() {
     const el = document.createElement('div');
     el.className = `track${st.muted ? ' muted' : ''}`;
     const role = ROLE_LABELS[tr.role] || tr.role;
+    // 曲に合わせて楽器を置きかえたパートは、名前の楽器の部分を外して「何をするパートか」だけ出す
+    const shown = tr.layer && tr.program != null && st.program !== tr.program && player.bank ? (tr.name.match(/（(.*)）/)?.[1] || tr.name) : tr.name;
     const name = tr.layer
-      ? `${esc(tr.name)} <span class="badge-auto">自動</span>`
+      ? `${esc(shown)} <span class="badge-auto">自動</span>`
       : tr.name && tr.name !== role ? `${role} <small>${esc(tr.name)}</small>` : role;
     const options = player.bank ? presetOptions(i) : waveOptions(tr.isDrum, st.tone);
     el.innerHTML = `
