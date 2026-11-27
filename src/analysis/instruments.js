@@ -232,7 +232,7 @@ export function classifyDrums(flux, E, spread, hopT) {
   const after = (arr, i, sec) => arr[Math.min(n - 1, i + Math.round(sec / hopT))];
   const minAfter = (arr, i, s0, s1) => {
     let m = Infinity;
-    for (let k = i + Math.round(s0 / hopT); k <= Math.min(n - 1, i + Math.round(s1 / hopT)); k++) m = Math.min(m, arr[k]);
+    for (let k = Math.max(0, i + Math.round(s0 / hopT)); k <= Math.min(n - 1, i + Math.round(s1 / hopT)); k++) m = Math.min(m, arr[k]);
     return m === Infinity ? 0 : m;
   };
   const peakNear = (arr, i) => Math.max(arr[i], arr[Math.min(n - 1, i + 1)], arr[Math.min(n - 1, i + 2)]);
@@ -258,12 +258,18 @@ export function classifyDrums(flux, E, spread, hopT) {
     out.push({ i, p: 38, s });
   }
   // ハイハット／シンバル：高い音。長く響けばシンバル、少し響けば開いたハイハット
+  let lastCrash = -1e9;
   for (const { i, s } of pickPeaks(flux.high, Math.round(0.07 / hopT), 0.25)) {
     const top = peakNear(E.high, i);
     if (top <= 0) continue;
-    // 大きさ（2乗）で比べる：シンバルは 0.22〜0.6 秒後もずっと響いている、開いたハイハットは 0.12〜0.18 秒後まで
-    const r4 = minAfter(E.high, i, 0.22, 0.6) / top, r15 = minAfter(E.high, i, 0.12, 0.18) / top;
-    const p = r4 > 0.03 ? 49 : r15 > 0.03 ? 46 : 42;
+    // 響きの長さは「鳴る直前のいちばん静かなところ」と比べる。
+    // 細かいハイハット・残響・歌の「サ行」で高い音が鳴り続けている曲でも、まわりより本当に長く残っているものだけを選ぶ
+    const before = Math.max(minAfter(E.high, i, -0.2, -0.02), top * 0.002);
+    const long = minAfter(E.high, i, 0.22, 0.6), mid = minAfter(E.high, i, 0.12, 0.18);
+    let p = long > top * 0.03 && long > before * 4 ? 49 : mid > top * 0.03 && mid > before * 3 ? 46 : 42;
+    // シンバルの響きが残っている間（1秒）は、次のシンバルにしない
+    if (p === 49 && (i - lastCrash) * hopT < 1.0) p = 42;
+    if (p === 49) lastCrash = i;
     out.push({ i, p, s });
   }
   return out;

@@ -20,12 +20,22 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   for (let i = 0; i < n; i++) {
     if (right) { x[i] = (input[i] + right[i]) / 2; side[i] = (input[i] - right[i]) / 2; } else x[i] = input[i];
   }
-  let peak = 0;
-  for (let i = 0; i < x.length; i++) peak = Math.max(peak, Math.abs(x[i]));
   if (x.length < sr * 3) throw new Error('曲が短すぎます（3秒以上にしてください）');
-  if (peak < 1e-3) throw new Error('音がほとんど入っていないようです');
-  for (let i = 0; i < x.length; i++) x[i] /= peak;
-  if (side) for (let i = 0; i < side.length; i++) side[i] /= peak;
+  // 音量をそろえる：一瞬だけ大きい音（タップ音など）ではなく、曲全体の聞こえる大きさを基準にする。
+  // 0.05秒ごとの音量の「上から1割」あたりを 0.25 にそろえる（画面収録などの小さい音も大きくなる）
+  const win = Math.round(sr * 0.05);
+  const levels = [];
+  for (let a = 0; a + win <= x.length; a += win) {
+    let e = 0;
+    for (let i = a; i < a + win; i++) e += x[i] * x[i];
+    levels.push(Math.sqrt(e / win));
+  }
+  levels.sort((a, b) => a - b);
+  const loud = levels[Math.floor(levels.length * 0.9)] || 0;
+  if (loud < 1e-5) throw new Error('音がほとんど入っていないようです');
+  const gain = 0.25 / loud;
+  for (let i = 0; i < x.length; i++) x[i] *= gain;
+  if (side) for (let i = 0; i < side.length; i++) side[i] *= gain;
 
   // ---------- 1. リズム用の細かい解析（音の出だしを探す） ----------
   onProgress(0.02, 'リズムを聴き取っています…');
