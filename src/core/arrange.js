@@ -134,7 +134,8 @@ function context(song) {
   melody = [...melody].sort((a, b) => a.t - b.t);
   const segs = harmony_segments(song, chordNotes, beat);
   const end = Math.max(...song.tracks.flatMap((t) => t.notes.map((n) => n.t + n.d)));
-  return { song, beat, melody, bass: [...bass].sort((a, b) => a.t - b.t), segs, end };
+  const drums = song.tracks.filter((t) => t.isDrum && !t.layer).flatMap((t) => t.notes).sort((a, b) => a.t - b.t);
+  return { song, beat, melody, bass: [...bass].sort((a, b) => a.t - b.t), segs, end, drums };
 }
 
 const avg = (notes) => notes.reduce((s, n) => s + n.p, 0) / notes.length;
@@ -304,13 +305,43 @@ function bells({ segs, beat }, k, every = 4, semis = 12) {
   return out;
 }
 
-/** 打楽器を足す：シェイカー（8分）・タンバリン（2・4拍）・シンバル（8小節ごと） */
-function percussion({ beat, end }) {
+/**
+ * 元のドラムが鳴っている小節と、拍の位置（ずれ）を調べる。
+ * 打楽器を足すのは、元のドラムが鳴っている小節だけ（前奏・静かな所・曲の終わりで鳴り続けないように）。
+ */
+function drumBars({ drums, beat }) {
+  const bar = beat * 4;
+  const count = new Map(), hats = new Map();
+  for (const n of drums) {
+    const b = Math.floor(n.t / bar + 1e-6);
+    count.set(b, (count.get(b) || 0) + 1);
+    if ([42, 44, 46, 54, 69, 70, 82].includes(n.p)) hats.set(b, (hats.get(b) || 0) + 1);
+  }
+  const active = new Set([...count].filter(([, c]) => c >= 3).map(([b]) => b));
+  // 拍の位置のずれ：バスドラとスネアが拍のどこに来るかの真ん中の値
+  const ph = drums.filter((n) => [35, 36, 38, 40].includes(n.p)).map((n) => ((n.t % beat) + beat) % beat).sort((a, b) => a - b);
+  let off = ph.length ? ph[ph.length >> 1] : 0;
+  if (off > beat / 2) off -= beat;
+  // ハイハットがもう細かく鳴っている小節（同じような音を重ねると、連打に聞こえる）
+  const busyHat = new Set([...hats].filter(([, c]) => c >= 6).map(([b]) => b));
+  return { bar, active, off, busyHat };
+}
+
+/** 打楽器を足す：シェイカー（8分）・タンバリン（2・4拍）・シンバル（8小節ごと）。元のドラムが鳴っている小節だけ */
+function percussion(c) {
+  const { beat, end } = c;
+  const { bar, active, off, busyHat } = drumBars(c);
   const out = [];
-  for (let t = 0, i = 0; t < end; t += beat / 2, i++) {
-    out.push({ t, d: 0.05, p: 70, v: i % 2 ? 45 : 60 }); // マラカス
-    if (i % 4 === 2) out.push({ t, d: 0.1, p: 54, v: 60 }); // タンバリン
-    if (i % 64 === 0 && i > 0) out.push({ t, d: 1, p: 57, v: 70 }); // シンバル
+  if (!active.size) return out;
+  for (let i = 0; ; i++) {
+    const t = off + (i * beat) / 2;
+    if (t >= end) break;
+    if (t < 0) continue;
+    const b = Math.floor((t + 1e-6) / bar);
+    if (!active.has(b)) continue;
+    if (!busyHat.has(b)) out.push({ t, d: 0.05, p: 70, v: i % 2 ? 40 : 55 }); // マラカス
+    if (i % 4 === 2) out.push({ t, d: 0.1, p: 54, v: 55 }); // タンバリン
+    if (i % 64 === 0 && i > 0 && active.has(b - 1)) out.push({ t, d: 1, p: 57, v: 70 }); // シンバル
   }
   return out;
 }
@@ -374,10 +405,14 @@ function shortNotes(notes, semis, k, len) {
 }
 
 /** 打楽器2：小節のはじめにトライアングル、8小節ごとにシンバル、4小節ごとに大太鼓 */
-function percussion2({ beat, end }) {
+function percussion2(c) {
+  const { beat, end } = c;
+  const { bar, active, off } = drumBars(c);
   const out = [];
-  const bar = beat * 4;
-  for (let t = 0, i = 0; t < end; t += bar, i++) {
+  for (let i = 0; ; i++) {
+    const t = off + i * bar;
+    if (t >= end) break;
+    if (t < 0 || !active.has(Math.floor((t + 1e-6) / bar))) continue;
     if (i % 2 === 0) out.push({ t, d: 0.5, p: 81, v: 50 }); // トライアングル
     if (i % 4 === 0) out.push({ t, d: 0.3, p: 35, v: 70 }); // 大太鼓
     if (i % 8 === 0 && i > 0) out.push({ t, d: 1.5, p: 49, v: 75 }); // シンバル

@@ -7,7 +7,7 @@ import { toneFromProgram } from '../core/midi-file.js';
 import { chooseInstruments } from '../core/instrument-choice.js';
 import { playTone, playDrum, isDrumKit, TONES } from './instruments.js';
 
-const LOOKAHEAD = 0.2; // 秒
+const LOOKAHEAD = 0.45; // 秒（少し先まで予約しておく。画面の処理などで一瞬止まっても音が抜けないように）
 const TICK_MS = 25;
 const FALLBACK_ROLES = { melody: 80, chords: 48, bass: 38, other: 0 };
 
@@ -149,18 +149,31 @@ export class Player {
    * 先頭の keep 個のトラック（元のパート）は、選んだ楽器・音量・消音をそのまま引き継ぐ。
    */
   replaceSong(song, keep = 0) {
-    const was = this.playing;
+    // 再生は止めない（止めると、そのあいだ音が途切れてしまう）。元のパートはそのまま鳴らし続け、増やしたパートだけ入れかえる
     const pos = this.currentTime;
-    if (was) this.pause();
     const old = this.settings;
     this.song = song;
     this.settings = song.tracks.map((_, i) => (i < keep && old[i] ? old[i] : { tone: null, program: 0, preset: null, muted: false, volume: 1 }));
     this.assignInstruments(keep);
     this.duration = songDuration(song);
-    this.buildTrackGains();
+    if (this.ctx) {
+      const oldGains = this.trackGains;
+      this.trackGains = song.tracks.map((_, i) => {
+        if (i < keep && oldGains[i]) return oldGains[i];
+        const g = this.ctx.createGain();
+        g.gain.value = this.trackVolume(i);
+        g.connect(this.master);
+        return g;
+      });
+      // 消えたパートの音は、鳴り終わるのを待ってから外す
+      const gone = oldGains.slice(keep);
+      setTimeout(() => { for (const g of gone) g.disconnect(); }, 5000);
+    }
+    if (this.playing && this.bank && this.bank.prepare) {
+      song.tracks.forEach((tr, i) => { if (i >= keep && this.settings[i].preset) this.bank.prepare(this.ctx, this.settings[i].preset, tr.notes); });
+    }
     this.replan();
-    this.pos = Math.min(pos, this.duration);
-    if (was) this.play();
+    if (!this.playing) this.pos = Math.min(pos, this.duration);
   }
 
   /** セットを変えたとき・曲を読み込んだときに、パートごとの楽器を決め直す（from より前のトラックはそのまま） */
@@ -223,7 +236,8 @@ export class Player {
     if (!this.song) return;
     this.events = planVoices(this.song, this.polyphony, { muted: this.settings.map((s) => s.muted) });
     this.played = new Set(this.events.map((e) => e.note));
-    if (this.playing) this.ptr = lowerBound(this.events, this.currentTime + LOOKAHEAD);
+    // 予約ずみの音の続きから（同じ音を2回予約しない）
+    if (this.playing) this.ptr = lowerBound(this.events, Math.max(this.currentTime, this.schedPos ?? -1) + 1e-6);
   }
 
   setPolyphony(n) {
@@ -258,6 +272,7 @@ export class Player {
     this.startCtx = this.ctx.currentTime + 0.06;
     this.startPos = this.pos;
     this.ptr = lowerBound(this.events, this.pos);
+    this.schedPos = this.pos - 1e-3;
     this.playing = true;
     this.lastTick = performance.now();
     this.lag = { late: 0, gaps: 0, since: performance.now(), cooldown: 0 };
@@ -308,23 +323,24 @@ export class Player {
     const ctx = this.ctx;
     const nowPerf = performance.now();
     const hidden = typeof document !== 'undefined' && document.hidden;
-    if (!hidden && nowPerf - this.lastTick > 120) this.lag.gaps++;
+    if (!hidden && nowPerf - this.lastTick > 250) this.lag.gaps++;
     this.lastTick = nowPerf;
 
     const now = ctx.currentTime;
     // 画面が裏に回るとタイマーが遅くなるので、先読みを長くする
-    const horizon = now + (hidden ? 1.5 : LOOKAHEAD);
+    const horizon = now + (hidden ? 4 : LOOKAHEAD);
     while (this.ptr < this.events.length) {
       const ev = this.events[this.ptr];
       const at = this.startCtx + ev.t - this.startPos;
       if (at > horizon) break;
       this.ptr++;
+      this.schedPos = ev.t;
       let dur = ev.d;
       if (at < now - 0.05) {
         if (!hidden) this.lag.late++;
         // 少し遅れただけで、まだ伸ばしている途中の音は、残りの長さだけ鳴らす（音が抜けないように）
         const left = at + ev.d - now;
-        if (at < now - 0.4 || left < 0.12 || this.song.tracks[ev.track]?.isDrum) continue;
+        if (at < now - 1.5 || left < 0.12 || this.song.tracks[ev.track]?.isDrum) continue;
         dur = left;
       }
       const v = this.noteOn(ev.track, { when: Math.max(at, now), dur, pitch: ev.p, vel: ev.v });
