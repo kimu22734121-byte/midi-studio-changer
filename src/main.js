@@ -35,7 +35,7 @@ const PRESETS = {
 
 let song = null; // いま鳴らしている曲（編成で楽器を増やしたあと）
 let baseSong = null; // 読み込んだままの曲
-let ensembleMode = 'clean'; // 'clean'＝すっきり／'full'＝たくさん／'original'＝元のパートだけ
+let ensembleMode = 'full'; // 'full'＝たくさん／'clean'＝すっきり／'original'＝元のパートだけ
 const roll = new PianoRoll($('#roll'));
 const player = new Player({
   onEnd: () => updatePlayButton(),
@@ -187,7 +187,7 @@ $('#rec-btn').addEventListener('click', async () => {
 function setSong(s) {
   baseSong = s;
   // MIDI・MusicXML は元の編成を大事にする。音声・楽譜テキストから作った曲は楽器を増やす
-  ensembleMode = s.source === 'midi' || s.source === 'musicxml' ? 'original' : 'clean';
+  ensembleMode = s.source === 'midi' || s.source === 'musicxml' ? 'original' : 'full';
   $('#ensemble-mode').value = ensembleMode;
   song = arranged();
   player.setSong(song);

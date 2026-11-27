@@ -56,6 +56,10 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const magSide = side ? new Float64Array(nS / 2) : null;
   const fSide = side ? makeFFT(nS) : null;
   const cPrev = new Float64Array(bB + 1);
+  const mA = binS(1000), mB = binS(4000);
+  const cmPrev = new Float64Array(mB + 1);
+  flux.cmid = new Float32Array(framesS); // 真ん中の音だけの 1〜4kHz の立ち上がり（クラップ・スネア用。シンセに邪魔されにくい）
+  const spreadC = new Float32Array(framesS);
   for (let f = 0; f < framesS; f++) {
     fS.magnitude(x, f * hopS - nS / 2, mag);
     if (side) fSide.magnitude(side, f * hopS - nS / 2, magSide);
@@ -67,6 +71,15 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       cPrev[i] = c;
     }
     bassH[f] = bh;
+    let cm = 0, cup = 0;
+    for (let i = mA; i <= mB; i++) {
+      const c = side ? Math.max(0, mag[i] - 1.5 * magSide[i]) : mag[i];
+      const d = c - cmPrev[i];
+      if (d > 0) { cm += d; cup++; }
+      cmPrev[i] = c;
+    }
+    flux.cmid[f] = cm / (mB - mA + 1);
+    spreadC[f] = cup / (mB - mA + 1);
     for (let i = 0; i < nS / 2; i++) lmag[i] = Math.log1p(100 * mag[i]);
     for (const k in bands) {
       const [a, b] = bands[k];
@@ -85,7 +98,8 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   onProgress(0.24, '曲の速さを調べています…');
   const hopT = hopS / sr;
   const env = highPass(flux.all, Math.round(0.4 / hopT));
-  const { bpm, phase } = estimateTempo(env, hopT);
+  const envLow = highPass(flux.low, Math.round(0.4 / hopT));
+  const { bpm, phase } = estimateTempo(env, hopT, envLow);
   const beat = 60 / bpm;
   const step = beat / 4; // 16分音符
   const offset = ((phase % beat) + beat) % beat;
@@ -95,11 +109,47 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   onProgress(0.3, 'ドラムを聴き取っています…');
   const drumNotes = [];
   const seen = new Set();
-  for (const { i, p, s: str } of classifyDrums(flux, E, spread, hopT)) {
+  for (const { i, p, s: str, w } of classifyDrums(flux, E, spread, hopT, spreadC)) {
     const k = q(i * hopT);
     if (k < 0 || seen.has(`${k}:${p}`)) continue;
     seen.add(`${k}:${p}`);
-    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str) });
+    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str), k, w: w ?? str });
+  }
+  // スネアはふつう表の拍に並ぶ。半分以上が裏拍にあるなら、それは本物のスネアではない
+  // （ユーロビートの裏拍で跳ねるベースと開いたハイハットが重なると、スネアに見える）ので、裏拍のものを外す
+  {
+    const sn = drumNotes.filter((n) => n.p === 38);
+    const off = sn.filter((n) => n.k % 4 !== 0).length;
+    if (sn.length && off >= sn.length * 0.5) {
+      for (let i = drumNotes.length - 1; i >= 0; i--) if (drumNotes[i].p === 38 && drumNotes[i].k % 4 !== 0) drumNotes.splice(i, 1);
+    }
+  }
+  // クラップは、表の拍のスネアがほとんどない曲（電子音の曲はスネアの代わりにクラップが多い）だけで使う
+  {
+    const bars = x.length / sr / (beat * 4);
+    if (drumNotes.filter((n) => n.p === 38).length >= bars) {
+      for (let i = drumNotes.length - 1; i >= 0; i--) if (drumNotes[i].p === 39) drumNotes.splice(i, 1);
+    }
+  }
+  // クラップは、2拍目・4拍目のように「1拍おき」に強く出てくるときだけ残す。
+  // 毎拍のバスドラにも少し「カッ」が入るので、数ではなく強さで、1拍おきの片方がはっきり強いかを見る
+  // （ハイハットやバスドラを取り違えたものは、どの拍も同じくらいなので外れる）
+  {
+    const onBeat = drumNotes.filter((n) => n.p === 39 && n.k % 4 === 0);
+    const avgV = (par) => {
+      const a = onBeat.filter((n) => (n.k / 4) % 2 === par);
+      return a.length ? a.reduce((x, n) => x + n.w, 0) / a.length : 0;
+    };
+    const ve = avgV(0), vo = avgV(1);
+    const dom = ve >= vo ? 0 : 1;
+    const bars = x.length / sr / (beat * 4);
+    const domCount = onBeat.filter((n) => (n.k / 4) % 2 === dom).length;
+    const ok = domCount >= bars && Math.max(ve, vo) >= 1.06 * Math.min(ve, vo);
+    for (let i = drumNotes.length - 1; i >= 0; i--) {
+      const n = drumNotes[i];
+      if (n.p === 39 && (!ok || n.k % 4 !== 0 || (n.k / 4) % 2 !== dom)) drumNotes.splice(i, 1);
+    }
+    for (const n of drumNotes) { delete n.k; delete n.w; }
   }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
@@ -137,12 +187,37 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ※ ドラムを弱める処理（時間方向の中央値）も試したが、歌の出だしまでぼけて成績が下がったので入れていない
   const CENTER = 1.5;
   const melMag = new Float64Array(nB / 2);
+  // 歌の高さは短い時間幅（2048点・約0.09秒）で調べる（ボカロのような速い動きもまとまらないように）
+  const nM = 2048;
+  const fM = nM !== nB ? makeFFT(nM) : null;
+  const fMs = nM !== nB && side ? makeFFT(nM) : null;
+  const magM = nM !== nB ? new Float64Array(nM / 2) : null;
+  const magMs = nM !== nB && side ? new Float64Array(nM / 2) : null;
+  const melBinHz = sr / nM;
+  const mRanges = [];
+  for (let pi = 0; pi < NP; pi++) {
+    const f0 = 440 * 2 ** ((MEL_LO + pi - 69) / 12);
+    for (let h = 1; h <= H; h++) {
+      const f = f0 * h;
+      if (f > 5000) { mRanges.push(null); continue; }
+      const w = Math.max(1, (f * 0.025) / melBinHz);
+      mRanges.push([Math.max(1, Math.floor(f / melBinHz - w)), Math.ceil(f / melBinHz + w)]);
+    }
+  }
   // ベース：低い音を細かく見るため、8192点で調べる
   const nBass = 8192;
   const fBass = makeFFT(nBass);
   const bRanges = bassRanges(sr / nBass);
   const magBass = new Float64Array(nBass / 2);
   const bsal = new Float32Array(framesB * NBASS);
+  // 毎拍バスドラが鳴る曲（電子音の曲によくある）では、ベースの音を一度ためておき、
+  // くり返すバスドラの音を取り除いてからベースの高さを調べ直す（長く響くバスドラをベースと間違えないように）
+  const kickTimes = drumNotes.filter((d) => d.p === 36).map((d) => d.t + offset);
+  const beatsTotal = x.length / sr / beat;
+  const fourFloor = kickTimes.length >= beatsTotal * 0.75 &&
+    drumNotes.filter((d) => d.p === 36 && Math.abs(d.t / beat - Math.round(d.t / beat)) < 0.05).length >= kickTimes.length * 0.85;
+  const NBB = 450; // ベースの倍音が入る高さまで（約1.2kHz）
+  const bassSpec = fourFloor ? new Float32Array(framesB * NBB) : null;
   // 伴奏のリズム：左右に広がった楽器の音（150〜2000Hz）が立ち上がったところ
   const sideFlux = side ? new Float32Array(framesB) : null;
   const sLo = Math.round(150 / binHz), sHi = Math.round(2000 / binHz);
@@ -159,6 +234,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     fBass.magnitude(x, f * hopB - nBass / 2, magBass);
     for (let b = 0; b < 700; b++) magBass[b] = Math.sqrt(magBass[b]);
     bassSalienceFrame(magBass, bRanges, bsal, f * NBASS);
+    if (bassSpec) for (let b = 0; b < NBB; b++) bassSpec[f * NBB + b] = magBass[b];
     if (side) {
       let fl = 0;
       for (let b = sLo; b <= sHi; b++) { const v = Math.sqrt(magS[b]); const d = v - sPrev[b]; if (d > 0) fl += d; sPrev[b] = v; }
@@ -166,11 +242,17 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       for (let b = 0; b <= bandTop; b++) bandMag[b] = Math.sqrt(magS[b]);
       bandFrame(bandMag, bRangesBand, bandP, bandS, f * MAX_BAND_NOTES);
     }
-    for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
+    if (fM) {
+      fM.magnitude(x, f * hopB - nM / 2, magM);
+      if (side) fMs.magnitude(side, f * hopB - nM / 2, magMs);
+      for (let b = 0; b < nM / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magM[b] - CENTER * magMs[b]) : magM[b]);
+    } else {
+      for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
+    }
     for (let pi = 0; pi < NP; pi++) {
       let s = 0;
       for (let h = 0; h < H; h++) {
-        const r = ranges[pi * H + h];
+        const r = mRanges[pi * H + h];
         if (!r) break;
         let m = 0;
         for (let b = r[0]; b <= r[1]; b++) if (melMag[b] > m) m = melMag[b];
@@ -208,6 +290,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ベース
   onProgress(0.86, 'ベースを聴き取っています…');
   const bassOnsets = new Set(pickPeaks(bassH, Math.round(0.08 / hopT), 0.25).map(({ i }) => Math.round((i * hopS) / hopB)));
+  if (bassSpec) removeRepeatingKick(bassSpec, NBB, framesB, hopB / sr, kickTimes, beat, bRanges, bsal);
   const bass = trackBass(bsal, framesB, hopB / sr, q, step, bassOnsets);
   const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
   const bassPcAt = (t) => {
@@ -258,7 +341,7 @@ function highPass(arr, win) {
   return out;
 }
 
-function estimateTempo(env, hopT) {
+function estimateTempo(env, hopT, envLow = null) {
   const N = env.length;
   let best = -1, bestLag = Math.round(0.5 / hopT);
   const minLag = Math.floor(60 / 180 / hopT), maxLag = Math.ceil(60 / 70 / hopT);
@@ -273,12 +356,43 @@ function estimateTempo(env, hopT) {
     const w = Math.exp(-0.5 * (Math.log2(b / 120) / 0.8) ** 2);
     if (s * w > best) { best = s * w; bestLag = lag; }
   }
-  // 半分の速さと取り違えやすい：遅すぎる（88未満）のに、倍の速さでも拍がよく合うなら倍にする
-  if (60 / (bestLag * hopT) < 88) {
-    const half = Math.round(bestLag / 2);
-    if (60 / (half * hopT) <= 170 && ac(half) >= 0.6 * ac(bestLag)) bestLag = half;
+  // 選んだ速さの 2倍・1.5倍・2/3倍・半分 とも比べる（電子音の曲で 155 を 103 と取り違えていた）。
+  // 拍の位置・裏拍の位置・さらに半分の位置に、音の鳴り始めがどれだけそろうかで決める
+  // 候補の速さで、拍の位置・裏拍・さらに半分の位置に音の鳴り始めがどれだけそろうか
+  const meanOf = (a) => a.reduce((x, y) => x + y, 0) / Math.max(1, a.length) || 1;
+  const mAll = meanOf(env), mLow = envLow ? meanOf(envLow) : 1;
+  const fit = (arr, b, wts) => {
+    const P = 60 / b / hopT;
+    let best = 0;
+    for (let ph = 0; ph < P; ph += 1) {
+      let g = 0;
+      for (const [frac, w] of wts) {
+        let sum = 0, c = 0;
+        for (let k = ph + frac * P; k < N; k += P) { sum += arr[Math.round(k)] || 0; c++; }
+        g += w * (sum / Math.max(1, c));
+      }
+      if (g > best) best = g;
+    }
+    return best;
+  };
+  // 全体の音と、バスドラ（低い音：拍の頭に来やすい）の両方で見る。速さの好み（120前後）は弱めに
+  const grid = (b) => {
+    let sc = fit(env, b, [[0, 1], [0.5, 0.8], [0.25, 0.4], [0.75, 0.4]]) / mAll;
+    if (envLow) sc += fit(envLow, b, [[0, 1]]) / mLow;
+    return { raw: sc, score: sc * Math.exp(-0.5 * (Math.log2(b / 125) / 1.0) ** 2) };
+  };
+  const base = 60 / (bestLag * hopT);
+  let bestB = base, bestG = grid(base);
+  for (const r of [2, 1.5, 2 / 3, 0.5, 4 / 3, 0.75]) {
+    const b = base * r;
+    if (b < 70 || b > 190) continue;
+    const g = grid(b);
+    if (g.score > bestG.score * 1.1) { bestG = g; bestB = b; }
   }
-  const b0 = 60 / (bestLag * hopT);
+  // 半分の速さに間違えると細かい音符がまとめられて大きく崩れるが、倍に間違えても害は小さい。
+  // 92 未満になったときは倍にする（毎拍バスドラの速い曲は、1拍おきに見てもそろって見えて区別できないため）
+  if (bestB < 92 && bestB * 2 <= 190) bestB *= 2;
+  const b0 = bestB;
   let bestScore = -1, bpm = b0, phase = 0;
   for (let b = b0 * 0.96; b <= b0 * 1.04; b += 0.05) {
     const period = 60 / b / hopT;
@@ -407,7 +521,11 @@ function mergeWobble(segs, hopT) {
       if (len >= short) continue;
       const prev = segs[i - 1], next = segs[i + 1];
       const near = (o) => o && Math.abs(o.p - s.p) <= 2 && Math.abs((o.a < s.a ? o.b : o.a) - (o.a < s.a ? s.a : s.b)) <= 1;
-      const cands = [prev, next].filter(near);
+      // まとめるのは「行って戻る（前と後ろが同じ高さ）＝ビブラート」と「出だしのしゃくり」だけ。
+      // 順に上がる・下がる速い動き（ボカロなど）はまとめない
+      const vib = prev && next && near(prev) && near(next) && prev.p === next.p;
+      const scoop = next && near(next) && (!prev || !near(prev)) && s.p !== next.p;
+      const cands = vib ? [prev, next] : scoop ? [next] : [];
       if (!cands.length) continue;
       const host = cands.reduce((x, y) => (y.b - y.a > x.b - x.a ? y : x));
       host.a = Math.min(host.a, s.a);
@@ -447,4 +565,43 @@ function keepChordTones(notes, chords, beat) {
     const pcs = c.chord.intervals.map((iv) => (c.chord.root + iv) % 12);
     return pcs.includes(n.p % 12);
   });
+}
+
+/**
+ * くり返すバスドラの音を取り除いて、ベースらしさを計算し直す。
+ * バスドラの直前〜直後の音を、バスドラごとに位置をそろえて集め、位置ごとの中央値を「バスドラだけの音」とする
+ * （ベースは小節ごとに高さが変わるので、中央値には残らない）。それを差し引いてから計算し直す。
+ */
+function removeRepeatingKick(spec, NBB, frames, hopT, kickTimes, beat, ranges, bsal) {
+  const kf = kickTimes.map((t) => Math.round(t / hopT)).filter((f) => f >= 0 && f < frames).sort((a, b) => a - b);
+  if (kf.length < 8) return;
+  const H = Math.round(0.19 / hopT); // 調べる時間幅の半分（8192点）だけ前から、バスドラの音が入り始める
+  const P = Math.max(4, Math.round(beat / hopT));
+  const D0 = -H, D1 = P - H; // 一番近いバスドラから見た位置の範囲
+  // 使うバスドラは最大 96 個（全体から均等に）
+  const pick = kf.length > 96 ? Array.from({ length: 96 }, (_, i) => kf[Math.floor((i * kf.length) / 96)]) : kf;
+  const K = new Map();
+  const col = new Float32Array(pick.length);
+  for (let d = D0; d < D1; d++) {
+    const row = new Float32Array(NBB);
+    for (let b = 0; b < NBB; b++) {
+      let c = 0;
+      for (const k of pick) { const f = k + d; if (f >= 0 && f < frames) col[c++] = spec[f * NBB + b]; }
+      if (!c) continue;
+      const a = col.subarray(0, c).sort();
+      row[b] = a[c >> 1];
+    }
+    K.set(d, row);
+  }
+  const clean = new Float64Array(NBB);
+  const out = new Float32Array(NBASS);
+  let ki = 0;
+  for (let f = 0; f < frames; f++) {
+    while (ki + 1 < kf.length && Math.abs(kf[ki + 1] - f) <= Math.abs(kf[ki] - f)) ki++;
+    const d = f - kf[ki];
+    const row = d >= D0 && d < D1 ? K.get(d) : null;
+    for (let b = 0; b < NBB; b++) clean[b] = row ? Math.max(0, spec[f * NBB + b] - row[b]) : spec[f * NBB + b];
+    bassSalienceFrame(clean, ranges, out, 0);
+    for (let i = 0; i < NBASS; i++) bsal[f * NBASS + i] = out[i];
+  }
 }
