@@ -151,17 +151,20 @@ for (let r = 0; r < 12; r++) {
 /**
  * 1拍ごとに和音を選ぶ。
  * chroma：フレームごとの12音の強さ（歌の音は弱めておく）／ bassPc(t)：その時刻のベースの音（なければ -1）
- * 戻り値：[{ chord, start（拍）, beats }]（start は offset を 0 とした拍）
+ * offset：最初の拍の位置（秒）、または「k 拍目は何秒か」を返す関数（拍を追いかけたとき）
+ * 戻り値：[{ chord, start（拍）, beats }]（start は最初の拍を 0 とした拍）
  */
 export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcAt, chromaS = null) {
-  const nBeats = Math.floor((frames * hopT - offset) / beat);
+  const bt = typeof offset === 'function' ? offset : (k) => offset + k * beat;
+  let nBeats = 0;
+  while (bt(nBeats + 1) <= frames * hopT + 1e-9) nBeats++;
   if (nBeats < 1) return [];
   const medE = pct(energy, 0.5);
   const NT = TEMPLATES.length, NONE = NT;
   const emis = [];
   for (let k = 0; k < nBeats; k++) {
-    const fa = Math.max(0, Math.round((offset + k * beat) / hopT));
-    const fb = Math.min(frames, Math.round((offset + (k + 1) * beat) / hopT));
+    const fa = Math.max(0, Math.round(bt(k) / hopT));
+    const fb = Math.min(frames, Math.round(bt(k + 1) / hopT));
     const c = new Float64Array(12);
     let e = 0;
     for (let f = fa; f < fb; f++) { e += energy[f]; for (let i = 0; i < 12; i++) c[i] += chroma[f * 12 + i]; }
@@ -180,7 +183,7 @@ export function chordsByBeat(chroma, energy, frames, hopT, offset, beat, bassPcA
     let norm = 0;
     for (let i = 0; i < 12; i++) { c[i] = Math.max(0, c[i] - mean); norm += c[i] * c[i]; }
     norm = Math.sqrt(norm) || 1;
-    const bp = bassPcAt(offset + (k + 0.25) * beat);
+    const bp = bassPcAt(bt(k + 0.25));
     for (let j = 0; j < NT; j++) {
       const tp = TEMPLATES[j];
       let s = 0;
@@ -268,7 +271,7 @@ export function classifyDrums(flux, E, spread, hopT, spreadC = null) {
     const strong = s >= 0.9;
     if (after(E.low, i, 0.13) > top * 0.3 && !strong) continue;
     if (flux.low[i] < flux.mid[i] * 0.8) continue;
-    out.push({ i, p: 36, s });
+    out.push({ i, p: 36, s, w: flux.low[i] / pickRef(flux.low) });
     kickF.add(i);
   }
   // スネア：「胴」の音（150〜300Hz）と、ザッという音（1〜4kHz）が同時に出る（バスドラと同時のものは除く）

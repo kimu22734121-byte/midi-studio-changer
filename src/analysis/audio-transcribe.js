@@ -2,6 +2,7 @@
 // 画面やWeb Audioには依存しない純粋な計算だけ（将来サーバーへ移せるように）。
 // 入力：モノラルの Float32Array と サンプリングレート（ANALYSIS_SR 推奨）。
 import { makeFFT } from './fft.js';
+import { trackBeats, makeGrid } from './beat-grid.js';
 import { createSong } from '../core/song.js';
 import { buildAccompaniment, voiceChord } from '../core/chords.js';
 import { bassRanges, bassSalienceFrame, trackBass, NBASS, chordsByBeat, compOnsets, classifyDrums, pickPeaks, bandRanges, bandFrame, trackBand, MAX_BAND_NOTES } from './instruments.js';
@@ -99,11 +100,16 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const hopT = hopS / sr;
   const env = highPass(flux.all, Math.round(0.4 / hopT));
   const envLow = highPass(flux.low, Math.round(0.4 / hopT));
-  const { bpm, phase } = estimateTempo(env, hopT, envLow);
+  const tempo0 = estimateTempo(env, hopT, envLow);
+  // 1拍ずつ拍を追いかけて目盛りにする（人が演奏した曲の速さの揺れや、長い曲でのずれに合わせる）。
+  // 出来上がる曲は一定の速さに並べ直す（k 番目の16分音符 → k × step 秒）
+  const tb = trackBeats(env, hopT, tempo0.bpm, tempo0.phase, envLow);
+  const bpm = tb.bpm;
   const beat = 60 / bpm;
   const step = beat / 4; // 16分音符
-  const offset = ((phase % beat) + beat) % beat;
-  const q = (t) => Math.round((t - offset) / step);
+  const grid = makeGrid(tb.beats);
+  const offset = grid.at(0);
+  const q = grid.q;
 
   // ---------- 3. ドラム ----------
   onProgress(0.3, 'ドラムを聴き取っています…');
@@ -151,6 +157,17 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     }
   }
   thinCymbals(drumNotes, beat);
+  // 拍の上にないバスドラで、その曲のふつうのバスドラよりはっきり弱いものは、
+  // ひずんだギターの刻みやベースの「ドン」を拾ったものなので外す
+  {
+    const ks = drumNotes.filter((n) => n.p === 36).map((n) => n.w).sort((a, b) => a - b);
+    const med = ks.length ? ks[ks.length >> 1] : 0;
+    const TH = 0.6;
+    for (let i = drumNotes.length - 1; i >= 0; i--) {
+      const n = drumNotes[i];
+      if (n.p === 36 && n.k % 4 !== 0 && n.w < TH * med) drumNotes.splice(i, 1);
+    }
+  }
   for (const n of drumNotes) { delete n.k; delete n.w; }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
@@ -213,7 +230,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const bsal = new Float32Array(framesB * NBASS);
   // 毎拍バスドラが鳴る曲（電子音の曲によくある）では、ベースの音を一度ためておき、
   // くり返すバスドラの音を取り除いてからベースの高さを調べ直す（長く響くバスドラをベースと間違えないように）
-  const kickTimes = drumNotes.filter((d) => d.p === 36).map((d) => d.t + offset);
+  const kickTimes = drumNotes.filter((d) => d.p === 36).map((d) => grid.at(d.t / beat));
   const beatsTotal = x.length / sr / beat;
   const fourFloor = kickTimes.length >= beatsTotal * 0.75 &&
     drumNotes.filter((d) => d.p === 36 && Math.abs(d.t / beat - Math.round(d.t / beat)) < 0.05).length >= kickTimes.length * 0.85;
@@ -296,14 +313,14 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
   const bassPcAt = (t) => {
     if (!useBass) return -1;
-    const rel = t - offset;
+    const rel = grid.pos(t) * beat;
     const n = bass.notes.find((x) => x.t <= rel + 1e-6 && x.t + x.d / 0.95 > rel);
     return n ? n.p % 12 : -1;
   };
 
   // ---------- 6. 和音（1拍ごと・セブンスも） ----------
   onProgress(0.9, 'コードを調べています…');
-  const chords = chordsByBeat(chroma, energy, framesB, hopB / sr, offset, beat, bassPcAt, chromaS);
+  const chords = chordsByBeat(chroma, energy, framesB, hopB / sr, grid.at, beat, bassPcAt, chromaS);
 
   const tracks = [{ name: 'メロディ', role: 'melody', notes: melody }];
   if (chords.length) {
@@ -320,7 +337,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     // 和音に含まれる音だけ残す（ひずんだギターの倍音などから生まれた余計な音を除く）
     band = keepChordTones(band, chords, beat);
     if (band.length >= bars * 2) tracks.push({ name: '伴奏（ギター・キーボードの音）', role: 'chords', notes: band });
-    else tracks.push(onsets ? { name: '伴奏（和音）', role: 'chords', notes: compNotes(chords, onsets, offset, beat) } : acc.find((t) => t.role === 'chords'));
+    else tracks.push(onsets ? { name: '伴奏（和音）', role: 'chords', notes: compNotes(chords, onsets, grid, beat) } : acc.find((t) => t.role === 'chords'));
     // ベース：聴き取れたら実際の音、だめなら和音の根っこ
     tracks.push(useBass ? { name: 'ベース', role: 'bass', notes: bass.notes } : acc.find((t) => t.role === 'bass'));
   } else if (useBass) tracks.push({ name: 'ベース', role: 'bass', notes: bass.notes });
@@ -540,8 +557,8 @@ function mergeWobble(segs, hopT) {
 }
 
 /** 伴奏の音符：和音ごとに、伴奏が鳴ったタイミング（onsets：秒）で和音を鳴らし、次のタイミングまで伸ばす */
-function compNotes(chords, onsets, offset, beat) {
-  const grid = [...new Set(onsets.map((t) => Math.round(((t - offset) / beat) * 4) / 4))].filter((b) => b >= 0).sort((a, b) => a - b);
+function compNotes(chords, onsets, g, beat) {
+  const grid = [...new Set(onsets.map((t) => Math.round(g.pos(t) * 4) / 4))].filter((b) => b >= 0).sort((a, b) => a - b);
   const out = [];
   for (const c of chords) {
     const a = c.start, e = c.start + c.beats;
@@ -652,7 +669,10 @@ export function thinCymbals(notes, beat = 0.5) {
     const hats = notes.filter((n) => (n.p === 42 || n.p === 46) && !del.has(n));
     const onK = hats.filter((h) => kicks.has(h.k)), offK = hats.filter((h) => !kicks.has(h.k));
     const avgW = (a) => a.reduce((x, h) => x + h.w, 0) / (a.length || 1);
-    if (onK.length >= 4 && offK.length >= 4) {
+    // 電子音の曲のように、ハイハットが「拍の間（裏拍）」だけで鳴っている曲のときだけ
+    // （ロックのように8分でずっと叩く曲では、バスドラと一緒のハイハットも本物）
+    const offbeat = offK.filter((h) => h.k % 4 === 2).length >= offK.length * 0.8;
+    if (onK.length >= 4 && offK.length >= 4 && offbeat) {
       const ref = avgW(offK);
       for (const h of onK) if (h.w < 0.85 * ref) del.add(h);
     }
