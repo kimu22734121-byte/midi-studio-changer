@@ -3,7 +3,8 @@
 // 入力：モノラルの Float32Array と サンプリングレート（ANALYSIS_SR 推奨）。
 import { makeFFT } from './fft.js';
 import { createSong } from '../core/song.js';
-import { buildAccompaniment } from '../core/chords.js';
+import { buildAccompaniment, voiceChord } from '../core/chords.js';
+import { bassRanges, bassSalienceFrame, trackBass, NBASS, chordsByBeat, compOnsets, classifyDrums } from './instruments.js';
 
 export const ANALYSIS_SR = 22050;
 const MEL_LO = 45; // A2
@@ -32,9 +33,10 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   const fS = makeFFT(nS);
   const framesS = Math.ceil(x.length / hopS);
   const binS = (f) => Math.min(nS / 2 - 1, Math.round((f * nS) / sr));
-  const bands = { all: [1, nS / 2], low: [binS(30), binS(150)], mid: [binS(1000), binS(4000)], high: [binS(6000), binS(10000)] };
+  const bands = { all: [1, nS / 2], low: [binS(30), binS(150)], body: [binS(150), binS(300)], mid: [binS(1000), binS(4000)], high: [binS(6000), binS(10000)] };
   const flux = {};
   for (const k in bands) flux[k] = new Float32Array(framesS);
+  const E = { low: new Float32Array(framesS), mid: new Float32Array(framesS), high: new Float32Array(framesS) }; // 帯域ごとの大きさ
   const spread = new Float32Array(framesS); // 中域で同時に強くなった周波数の割合（スネアらしさ）
   let mag = new Float64Array(nS / 2), prev = new Float64Array(nS / 2);
   let lmag = new Float64Array(nS / 2), lprev = new Float64Array(nS / 2);
@@ -48,19 +50,12 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       for (let i = a; i <= b; i++) { const d = cur[i] - old[i]; if (d > 0) { s += d; up++; } }
       flux[k][f] = s / (b - a + 1);
       if (k === 'mid') spread[f] = up / (b - a + 1);
+      if (E[k]) { let e = 0; for (let i = a; i <= b; i++) e += mag[i] * mag[i]; E[k][f] = e; }
     }
     [mag, prev] = [prev, mag];
     [lmag, lprev] = [lprev, lmag];
     if (f % 2000 === 0) onProgress(0.02 + 0.2 * (f / framesS), 'リズムを聴き取っています…');
   }
-  // 帯域どうしを比べて、それらしい音だけ残す
-  const kick = new Float32Array(framesS), snare = new Float32Array(framesS);
-  for (let f = 0; f < framesS; f++) {
-    if (flux.low[f] > 3 * flux.mid[f]) kick[f] = flux.low[f];
-    if (flux.mid[f] > 1.5 * flux.high[f] && spread[f] > 0.5) snare[f] = flux.mid[f];
-  }
-  for (let f = 0; f < framesS; f++) if (kick[f] > 0) for (let g = Math.max(0, f - 2); g <= Math.min(framesS - 1, f + 2); g++) snare[g] = 0;
-
   // ---------- 2. テンポ（速さ）と拍の位置 ----------
   onProgress(0.24, '曲の速さを調べています…');
   const hopT = hopS / sr;
@@ -75,17 +70,12 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   onProgress(0.3, 'ドラムを聴き取っています…');
   const drumNotes = [];
   const seen = new Set();
-  const addDrum = (arr, pitch, sens) => {
-    for (const { i, s } of pickPeaks(arr, Math.round(0.07 / hopT), sens)) {
-      const k = q(i * hopT);
-      if (k < 0 || seen.has(`${k}:${pitch}`)) continue;
-      seen.add(`${k}:${pitch}`);
-      drumNotes.push({ t: k * step, d: 0.08, p: pitch, v: Math.round(60 + 60 * Math.min(1, s)) });
-    }
-  };
-  addDrum(kick, 36, 0.35);
-  addDrum(snare, 38, 0.45);
-  addDrum(flux.high, 42, 0.4);
+  for (const { i, p, s: str } of classifyDrums(flux, E, spread, hopT)) {
+    const k = q(i * hopT);
+    if (k < 0 || seen.has(`${k}:${p}`)) continue;
+    seen.add(`${k}:${p}`);
+    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str) });
+  }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
   const nB = 4096, hopB = 512;
@@ -105,16 +95,13 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   }
   const hw = Array.from({ length: H }, (_, h) => 0.8 ** h);
   const chromaBin = new Int8Array(nB / 2).fill(-1);
-  const bassBin = new Int8Array(nB / 2).fill(-1);
   for (let b = 1; b < nB / 2; b++) {
     const f = b * binHz;
     const pc = ((Math.round(12 * Math.log2(f / 440)) + 69) % 12 + 12) % 12;
     if (f >= 80 && f <= 1000) chromaBin[b] = pc;
-    if (f >= 40 && f <= 260) bassBin[b] = pc;
   }
   const sal = new Float32Array(framesB * NP);
   const chroma = new Float32Array(framesB * 12);
-  const bassC = new Float32Array(framesB * 12);
   const energy = new Float32Array(framesB);
   const magB = new Float64Array(nB / 2);
   const magS = side ? new Float64Array(nB / 2) : null;
@@ -124,9 +111,27 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ※ ドラムを弱める処理（時間方向の中央値）も試したが、歌の出だしまでぼけて成績が下がったので入れていない
   const CENTER = 1.5;
   const melMag = new Float64Array(nB / 2);
+  // ベース：低い音を細かく見るため、8192点で調べる
+  const nBass = 8192;
+  const fBass = makeFFT(nBass);
+  const bRanges = bassRanges(sr / nBass);
+  const magBass = new Float64Array(nBass / 2);
+  const bsal = new Float32Array(framesB * NBASS);
+  // 伴奏のリズム：左右に広がった楽器の音（150〜2000Hz）が立ち上がったところ
+  const sideFlux = side ? new Float32Array(framesB) : null;
+  const sLo = Math.round(150 / binHz), sHi = Math.round(2000 / binHz);
+  const sPrev = side ? new Float64Array(sHi + 1) : null;
   for (let f = 0; f < framesB; f++) {
     fB.magnitude(x, f * hopB - nB / 2, magB);
     if (side) fS2.magnitude(side, f * hopB - nB / 2, magS);
+    fBass.magnitude(x, f * hopB - nBass / 2, magBass);
+    for (let b = 0; b < 700; b++) magBass[b] = Math.sqrt(magBass[b]);
+    bassSalienceFrame(magBass, bRanges, bsal, f * NBASS);
+    if (side) {
+      let fl = 0;
+      for (let b = sLo; b <= sHi; b++) { const v = Math.sqrt(magS[b]); const d = v - sPrev[b]; if (d > 0) fl += d; sPrev[b] = v; }
+      sideFlux[f] = fl;
+    }
     for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
     for (let pi = 0; pi < NP; pi++) {
       let s = 0;
@@ -143,17 +148,10 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     for (let i = 0; i < nB / 2; i++) { magB[i] = Math.sqrt(magB[i]); e += magB[i]; }
     energy[f] = e;
     // 山になっている周波数だけを数える（倍音のにじみを減らす）
-    let bmax = 0;
     for (let b = 1; b < nB / 2 - 1; b++) {
       const isPeak = magB[b] > magB[b - 1] && magB[b] >= magB[b + 1];
       if (!isPeak) continue;
       if (chromaBin[b] >= 0) chroma[f * 12 + chromaBin[b]] += magB[b];
-      if (bassBin[b] >= 0 && magB[b] > bmax) bmax = magB[b];
-    }
-    // ベース：低い方から見て最初に出てくる強い山の音
-    for (let b = 1; b < nB / 2 - 1 && bmax > 0; b++) {
-      if (bassBin[b] < 0) continue;
-      if (magB[b] > magB[b - 1] && magB[b] >= magB[b + 1] && magB[b] > bmax * 0.5) { bassC[f * 12 + bassBin[b]] = 1; break; }
     }
     if (f % 300 === 0) onProgress(0.32 + 0.45 * (f / framesB), 'メロディを聴き取っています…');
   }
@@ -161,17 +159,35 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ---------- 5. メロディ（いちばん目立つ音の高さを、なめらかにつなぐ） ----------
   onProgress(0.8, 'メロディを音符にしています…');
   const melody = trackMelody(sal, framesB, hopB / sr, q, step);
-
-  // ---------- 6. コード（2拍ごと） ----------
-  onProgress(0.9, 'コードを調べています…');
-  let chords = [], bestScore = -1;
-  for (let ph = 0; ph < 4; ph++) {
-    const r = detectChords(chroma, bassC, energy, framesB, hopB / sr, offset, beat, ph);
-    if (r.score > bestScore) { bestScore = r.score; chords = r.list; }
+  // 和音を調べるとき、歌の音は邪魔になるので弱める
+  for (let f = 0; f < framesB; f++) {
+    const pi = melody.path[f];
+    if (pi < NP) chroma[f * 12 + ((MEL_LO + pi) % 12)] *= 0.4;
   }
+  // ベース
+  onProgress(0.86, 'ベースを聴き取っています…');
+  const bass = trackBass(bsal, framesB, hopB / sr, q, step);
+  const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
+  const bassPcAt = (t) => {
+    if (!useBass) return -1;
+    const rel = t - offset;
+    const n = bass.notes.find((x) => x.t <= rel + 1e-6 && x.t + x.d / 0.95 > rel);
+    return n ? n.p % 12 : -1;
+  };
+
+  // ---------- 6. 和音（1拍ごと・セブンスも） ----------
+  onProgress(0.9, 'コードを調べています…');
+  const chords = chordsByBeat(chroma, energy, framesB, hopB / sr, offset, beat, bassPcAt);
 
   const tracks = [{ name: 'メロディ', role: 'melody', notes: melody }];
-  if (chords.length) tracks.push(...buildAccompaniment(chords, bpm, { drums: false }));
+  if (chords.length) {
+    const acc = buildAccompaniment(chords, bpm, { drums: false });
+    // 伴奏：左右に広がった楽器が鳴ったタイミングで和音を鳴らす（わからなければ伸ばす）
+    const onsets = compOnsets(sideFlux, hopB / sr, x.length / sr, beat);
+    tracks.push(onsets ? { name: '伴奏（和音）', role: 'chords', notes: compNotes(chords, onsets, offset, beat) } : acc.find((t) => t.role === 'chords'));
+    // ベース：聴き取れたら実際の音、だめなら和音の根っこ
+    tracks.push(useBass ? { name: 'ベース', role: 'bass', notes: bass.notes } : acc.find((t) => t.role === 'bass'));
+  } else if (useBass) tracks.push({ name: 'ベース', role: 'bass', notes: bass.notes });
   tracks.push({ name: 'ドラム', role: 'drums', isDrum: true, notes: drumNotes });
   onProgress(1, 'できました');
   return createSong({ title, bpm: Math.round(bpm * 10) / 10, source, tracks });
@@ -219,28 +235,6 @@ function estimateTempo(env, hopT) {
 function percentile(arr, p) {
   const a = Float32Array.from(arr).sort();
   return a[Math.min(a.length - 1, Math.floor(a.length * p))] || 0;
-}
-
-function pickPeaks(arr, minGap, sens) {
-  const norm = percentile(arr, 0.98) || 1;
-  const out = [];
-  const W = 20;
-  let lastI = -1e9;
-  for (let i = 1; i < arr.length - 1; i++) {
-    const v = arr[i] / norm;
-    if (v < sens) continue;
-    let isMax = true;
-    for (let j = Math.max(0, i - 3); j <= Math.min(arr.length - 1, i + 3); j++) if (arr[j] > arr[i]) { isMax = false; break; }
-    if (!isMax) continue;
-    let m = 0;
-    for (let j = Math.max(0, i - W); j < Math.min(arr.length, i + W); j++) m += arr[j];
-    m /= 2 * W;
-    if (arr[i] < m * 1.6) continue;
-    if (i - lastI < minGap) continue;
-    out.push({ i, s: v });
-    lastI = i;
-  }
-  return out;
 }
 
 function trackMelody(sal, frames, hopT, q, step) {
@@ -332,61 +326,9 @@ function trackMelody(sal, frames, hopT, q, step) {
     }
     out.push(n);
   }
-  return out.map((n) => ({ t: n.qs * step, d: (n.qe - n.qs) * step * 0.95, p: n.p, v: n.v }));
-}
-
-const TEMPLATES = [];
-for (let r = 0; r < 12; r++) {
-  TEMPLATES.push({ root: r, iv: [0, 4, 7], name: 'maj' });
-  TEMPLATES.push({ root: r, iv: [0, 3, 7], name: 'min' });
-}
-
-function detectChords(chroma, bassC, energy, frames, hopT, offset, beat, phaseBeats) {
-  const segLen = beat * 2;
-  const start0 = offset + phaseBeats * beat;
-  const nSeg = Math.ceil((frames * hopT - start0) / segLen);
-  const medE = percentile(energy, 0.5);
-  const list = [];
-  let prev = null, total = 0, counted = 0;
-  for (let k = 0; k < nSeg; k++) {
-    const fa = Math.max(0, Math.round((start0 + k * segLen) / hopT));
-    const fb = Math.min(frames, Math.round((start0 + (k + 1) * segLen) / hopT));
-    if (fb <= fa) continue;
-    const c = new Float64Array(12), bc = new Float64Array(12);
-    let e = 0;
-    for (let f = fa; f < fb; f++) {
-      e += energy[f];
-      for (let i = 0; i < 12; i++) c[i] += chroma[f * 12 + i];
-    }
-    // ベース音の多数決（ドラムに一瞬じゃまされても大丈夫なように）
-    for (let f = fa; f < fb; f++) for (let i = 0; i < 12; i++) bc[i] += bassC[f * 12 + i];
-    e /= fb - fa;
-    if (e < medE * 0.15) { prev = null; continue; }
-    // 平均を引いて目立つ音だけ残す
-    const mean = c.reduce((a, b) => a + b, 0) / 12;
-    let norm = 0;
-    for (let i = 0; i < 12; i++) { c[i] = Math.max(0, c[i] - mean); norm += c[i] * c[i]; }
-    norm = Math.sqrt(norm) || 1;
-    let bassTop = 0;
-    for (let i = 1; i < 12; i++) if (bc[i] > bc[bassTop]) bassTop = i;
-    let best = null, bestS = -1;
-    for (const tp of TEMPLATES) {
-      let s = 0;
-      for (const iv of tp.iv) s += c[(tp.root + iv) % 12];
-      s = s / norm / Math.sqrt(3);
-      if (bassTop === tp.root) s += 0.15;
-      if (prev && prev === tp) s += 0.04;
-      if (s > bestS) { bestS = s; best = tp; }
-    }
-    total += bestS; counted++;
-    const chord = { root: best.root, bass: best.root, intervals: best.iv, name: best.name };
-    const startBeat = phaseBeats + k * 2;
-    const last = list[list.length - 1];
-    if (last && prev === best && last.start + last.beats === startBeat) last.beats += 2;
-    else list.push({ chord, start: startBeat, beats: 2 });
-    prev = best;
-  }
-  return { list, score: counted ? total / counted : 0 };
+  const res = out.map((n) => ({ t: n.qs * step, d: (n.qe - n.qs) * step * 0.95, p: n.p, v: n.v }));
+  res.path = path; // フレームごとの高さ（NP＝鳴っていない）
+  return res;
 }
 
 /**
@@ -416,4 +358,22 @@ function mergeWobble(segs, hopT) {
       break;
     }
   }
+}
+
+/** 伴奏の音符：和音ごとに、伴奏が鳴ったタイミング（onsets：秒）で和音を鳴らし、次のタイミングまで伸ばす */
+function compNotes(chords, onsets, offset, beat) {
+  const grid = [...new Set(onsets.map((t) => Math.round(((t - offset) / beat) * 4) / 4))].filter((b) => b >= 0).sort((a, b) => a - b);
+  const out = [];
+  for (const c of chords) {
+    const a = c.start, e = c.start + c.beats;
+    const hits = grid.filter((b) => b >= a - 1e-6 && b < e - 1e-6);
+    if (!hits.length || hits[0] - a > 0.26) hits.unshift(a); // 和音が変わるところでは必ず鳴らす
+    const ps = voiceChord(c.chord);
+    hits.forEach((h, k) => {
+      const nxt = k + 1 < hits.length ? hits[k + 1] : e;
+      const d = Math.max(0.2, Math.min(nxt - h, 2)) * beat * 0.92;
+      for (const p of ps) out.push({ t: h * beat, d, p, v: 82 });
+    });
+  }
+  return out;
 }
