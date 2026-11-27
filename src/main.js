@@ -89,7 +89,7 @@ const baseName = (name) => name.replace(/\.[^.]+$/, '');
 // ---------- 取り込み ----------
 async function importAudioBuffer(buf, title, source, isVideo = false) {
   showStatus(isVideo ? '動画から音を取り出しています…' : '曲を読み込んでいます…', 0.02);
-  const { samples, sampleRate, duration, silent } = await decodeToMono(buf, ANALYSIS_SR);
+  const { samples, right, sampleRate, duration, silent } = await decodeToMono(buf, ANALYSIS_SR);
   if (silent) {
     throw new Error(isVideo
       ? '動画に音が入っていませんでした。配信サービス（Apple Music など）の曲は、画面収録すると音が消えるため取り込めません。'
@@ -97,7 +97,7 @@ async function importAudioBuffer(buf, title, source, isVideo = false) {
   }
   if (duration > 8 * 60) toast('長い曲なので、最初の8分だけ変換します');
   const s = await analyzeAudio(samples, sampleRate, {
-    title, source,
+    title, source, right,
     onProgress: (p, msg) => showStatus(msg, 0.05 + p * 0.95),
   });
   setSong(s);
