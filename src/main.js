@@ -35,7 +35,7 @@ const PRESETS = {
 
 let song = null; // いま鳴らしている曲（編成で楽器を増やしたあと）
 let baseSong = null; // 読み込んだままの曲
-let ensembleMode = 'auto';
+let ensembleMode = 'clean'; // 'clean'＝すっきり／'full'＝たくさん／'original'＝元のパートだけ
 const roll = new PianoRoll($('#roll'));
 const player = new Player({
   onEnd: () => updatePlayButton(),
@@ -187,7 +187,7 @@ $('#rec-btn').addEventListener('click', async () => {
 function setSong(s) {
   baseSong = s;
   // MIDI・MusicXML は元の編成を大事にする。音声・楽譜テキストから作った曲は楽器を増やす
-  ensembleMode = s.source === 'midi' || s.source === 'musicxml' ? 'original' : 'auto';
+  ensembleMode = s.source === 'midi' || s.source === 'musicxml' ? 'original' : 'clean';
   $('#ensemble-mode').value = ensembleMode;
   song = arranged();
   player.setSong(song);
@@ -203,15 +203,15 @@ function setSong(s) {
 
 // ---------- 編成（音の数に合わせて楽器を増やす） ----------
 function arranged() {
-  return ensembleMode === 'auto' ? expandEnsemble(baseSong, player.polyphony) : baseSong;
+  return ensembleMode === 'original' ? baseSong : expandEnsemble(baseSong, player.polyphony, ensembleMode);
 }
 function updateSongInfo() {
   const parts = baseSong.tracks.map((t) => ROLE_LABELS[t.role] || t.role);
   $('#song-info').textContent = `速さ：1分あたり${Math.round(baseSong.bpm)}拍 ／ パート：${[...new Set(parts)].join('・')} ／ 音符 ${noteCount(song)}個`;
   const added = song.tracks.length - baseSong.tracks.length;
   $('#ensemble-info').textContent = added > 0
-    ? `いま ${song.tracks.length} パートで演奏中（元の ${baseSong.tracks.length} パート＋重ね・ハモり・アルペジオなど ${added} パート）`
-    : ensembleMode === 'auto'
+    ? `いま ${song.tracks.length} パートで演奏中（元の ${baseSong.tracks.length} パート＋${ensembleMode === 'full' ? '重ね・ハモり・アルペジオなど' : 'メロディやベースの重ねなど'} ${added} パート）`
+    : ensembleMode !== 'original'
       ? `いま ${song.tracks.length} パートで演奏中（音の数を 8 以上にすると楽器が増えます）`
       : `いま ${song.tracks.length} パートで演奏中（元のパートだけ）`;
 }

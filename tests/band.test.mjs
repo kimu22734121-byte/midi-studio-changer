@@ -58,3 +58,11 @@ test('音が小さく、一瞬だけ大きな音がある動画でも聴き取�
   assert.ok(r.bass.rec >= 0.9, `ベース ${JSON.stringify(r.bass)}`);
   assert.ok(r.drums.snare.rec >= 0.9, `スネア ${JSON.stringify(r.drums.snare)}`);
 });
+
+test('暗い調の曲・セブンス入りでも和音を聴き取れる（左右あり）', () => {
+  for (const opt of [{}, { prog: 'minor' }]) {
+    const r = analyze(opt);
+    assert.ok(r.chordRoot >= 0.9, `根っこ ${r.chordRoot}`);
+    assert.ok(r.chordExact >= 0.85, `組み合わせ ${r.chordExact}`);
+  }
+});
