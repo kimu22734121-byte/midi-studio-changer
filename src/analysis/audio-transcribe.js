@@ -115,11 +115,11 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   onProgress(0.3, 'ドラムを聴き取っています…');
   const drumNotes = [];
   const seen = new Set();
-  for (const { i, p, s: str, w } of classifyDrums(flux, E, spread, hopT, spreadC)) {
+  for (const { i, p, s: str, w, lb } of classifyDrums(flux, E, spread, hopT, spreadC)) {
     const k = q(i * hopT);
     if (k < 0 || seen.has(`${k}:${p}`)) continue;
     seen.add(`${k}:${p}`);
-    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str), k, w: w ?? str });
+    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str), k, w: w ?? str, lb });
   }
   // スネアはふつう表の拍に並ぶ。半分以上が裏拍にあるなら、それは本物のスネアではない
   // （ユーロビートの裏拍で跳ねるベースと開いたハイハットが重なると、スネアに見える）ので、裏拍のものを外す
@@ -157,6 +157,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     }
   }
   thinCymbals(drumNotes, beat);
+  const kickLb = new Map(drumNotes.filter((n) => n.p === 36).map((n) => [n, n.lb]));
   // 拍の上にないバスドラで、その曲のふつうのバスドラよりはっきり弱いものは、
   // ひずんだギターの刻みやベースの「ドン」を拾ったものなので外す
   {
@@ -168,7 +169,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       if (n.p === 36 && n.k % 4 !== 0 && n.w < TH * med) drumNotes.splice(i, 1);
     }
   }
-  for (const n of drumNotes) { delete n.k; delete n.w; }
+  for (const n of drumNotes) { delete n.k; delete n.w; delete n.lb; }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
   const nB = 4096, hopB = 512;
@@ -326,6 +327,18 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   if (bassSpec) removeRepeatingKick(bassSpec, NBB, framesB, hopB / sr, kickTimes, beat, bRanges, bsal);
   const bass = trackBass(bsal, framesB, hopB / sr, q, step, bassOnsets);
   const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
+  // ベースの音の出だしと重なる、拍の上にないバスドラで、その曲の拍の上のバスドラより「低い音の割合」がはっきり小さいものは、
+  // ベースの「ボン」を拾ったものなので外す
+  if (useBass) {
+    const bassStarts = new Set(bass.notes.map((n) => Math.round(n.t / step)));
+    const on = [...kickLb].filter(([n]) => Math.round(n.t / step) % 4 === 0).map(([, v]) => v).sort((a, b) => a - b);
+    const ref = on.length >= 4 ? on[on.length >> 1] : 0;
+    for (let i = drumNotes.length - 1; ref && i >= 0; i--) {
+      const n = drumNotes[i];
+      const k = Math.round(n.t / step);
+      if (n.p === 36 && k % 4 !== 0 && bassStarts.has(k) && kickLb.get(n) < 0.6 * ref) drumNotes.splice(i, 1);
+    }
+  }
   const bassPcAt = (t) => {
     if (!useBass) return -1;
     const rel = grid.pos(t) * beat;

@@ -112,6 +112,7 @@
 - [x] 再生中の中抜け対策（音数の自動調整で止めない・先読み）、ドラムの連打対策（打楽器は元のドラムがある所だけ・ハイハット/シンバルの間引き）
 - [x] 拍を1拍ずつ追いかける目盛り（src/analysis/beat-grid.js）でドラムなどの位置ずれを解消、弱いバスドラの誤検出を除去
 - [x] 楽器の種類の聴き分け（YAMNet）→ 生音・標準・オーケストラのセットでパートの楽器に反映、画面に表示
+- [x] J-POP のボカロ曲風の試験曲（本物の録音の楽器で鳴らす。tests/jpop-helpers.mjs）で、高い歌（2オクターブ下の取り違え）・スネアとベースをバスドラと間違えるのを改善
 - [ ] 第3段階：AIアレンジ（雰囲気の言葉 → アレンジし直し）
 - [ ] 音源分離（必要になったら。サーバー化と合わせて検討）
 
@@ -142,7 +143,7 @@ tools/make-soundfonts.mjs  アプリ独自セット（chip/synth）を作るス�
 tools/build-orchestra.mjs  MuseScore の MS Basic.sf3（MIT）からオーケストラ／生音（full）のセットを作るスクリプト（ffmpeg が必要）
 tools/make-edm.mjs    電子音（ユーロビート・EDM）のセットを作るスクリプト
 tools/build-sample-soundfonts.mjs  録音サンプル集（CC0/CC-BY）からジャズのセットを作るスクリプト（git・ffmpeg が必要）
-tests/                node --test で動くテスト
+tests/                node --test で動くテスト（jpop-helpers.mjs は生音セットの音で試験曲を鳴らす）
 ```
 
 - 曲データ（Song）の形は `src/core/song.js` 冒頭のコメント参照。時間はすべて秒。
