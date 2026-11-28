@@ -205,6 +205,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ※ ドラムを弱める処理（時間方向の中央値）も試したが、歌の出だしまでぼけて成績が下がったので入れていない
   const CENTER = 1.5;
   const melMag = new Float64Array(nB / 2);
+  const melW = new Float64Array(nB / 2), cum = new Float64Array(nB / 2 + 1);
   // 歌の高さは短い時間幅（2048点・約0.09秒）で調べる（ボカロのような速い動きもまとまらないように）
   const nM = 2048;
   const fM = nM !== nB ? makeFFT(nM) : null;
@@ -267,13 +268,27 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     } else {
       for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
     }
+    // 音の「山」だけを残す：まわり（高さに比例した幅）のならした大きさを引く。
+    // 伴奏がぎっしり鳴っていると、低い音の候補がどれも倍音を集めて強く見えてしまうのを防ぐ
+    const WK = 1.0;
+    {
+      const nb = melMag.length;
+      cum[0] = 0;
+      for (let b = 0; b < nb; b++) cum[b + 1] = cum[b] + melMag[b];
+      for (let b = 0; b < nb; b++) {
+        const w = Math.max(3, Math.round(b * 0.06));
+        const lo = Math.max(0, b - w), hi = Math.min(nb, b + w + 1);
+        melW[b] = Math.max(0, melMag[b] - WK * (cum[hi] - cum[lo]) / (hi - lo));
+      }
+    }
+    const MM = melW;
     for (let pi = 0; pi < NP; pi++) {
       let s = 0;
       for (let h = 0; h < H; h++) {
         const r = mRanges[pi * H + h];
         if (!r) break;
         let m = 0;
-        for (let b = r[0]; b <= r[1]; b++) if (melMag[b] > m) m = melMag[b];
+        for (let b = r[0]; b <= r[1]; b++) if (MM[b] > m) m = MM[b];
         s += hw[h] * m;
       }
       sal[f * NP + pi] = s;
@@ -438,7 +453,9 @@ function trackMelody(sal, frames, hopT, q, step) {
     maxes[f] = m;
   }
   const ref = percentile(maxes, 0.9) || 1;
-  const prior = Array.from({ length: NP }, (_, i) => 0.6 + 0.4 * Math.exp(-0.5 * ((MEL_LO + i - 67) / 12) ** 2));
+  // 歌の高さの好み：G4 あたりがいちばん。低い方は今まで通りに下げ、高い方（ボカロ・J-POP の高い歌）はあまり下げない
+  const PC = 67, PWL = 12, PWH = 32;
+  const prior = Array.from({ length: NP }, (_, i) => 0.6 + 0.4 * Math.exp(-0.5 * ((MEL_LO + i - PC) / (MEL_LO + i < PC ? PWL : PWH)) ** 2));
   const S = new Float32Array(frames * NP);
   for (let f = 0; f < frames; f++) {
     for (let p = 0; p < NP; p++) S[f * NP + p] = Math.min(1.5, (sal[f * NP + p] / ref) * prior[p]);
@@ -518,6 +535,8 @@ function trackMelody(sal, frames, hopT, q, step) {
     }
     out.push(n);
   }
+  // 1つだけ1オクターブ跳ねた短い音は、倍音を拾った取り違え：前後の音に合うように1オクターブ戻す
+  fixOctaveSpikes(out, step);
   const res = out.map((n) => ({ t: n.qs * step, d: (n.qe - n.qs) * step * 0.95, p: n.p, v: n.v }));
   res.path = path; // フレームごとの高さ（NP＝鳴っていない）
   return res;
@@ -689,4 +708,23 @@ export function thinCymbals(notes, beat = 0.5) {
     }
   }
   for (let i = notes.length - 1; i >= 0; i--) if (del.has(notes[i])) notes.splice(i, 1);
+}
+
+/**
+ * 前後の音から 1オクターブ近く離れて、1オクターブ動かすと前後にぴったり合う「短い音」を直す。
+ * （歌の倍音を拾うと、1音だけ 1オクターブ上や下に跳ねたように見える。本物の歌ではめったにない）
+ */
+export function fixOctaveSpikes(notes, step) {
+  const near = (a, b, gap) => b && Math.abs(a.qs - (b.qs < a.qs ? b.qe : b.qs)) <= gap;
+  for (let i = 1; i < notes.length - 1; i++) {
+    const n = notes[i], a = notes[i - 1], b = notes[i + 1];
+    if ((n.qe - n.qs) * step > 0.35) continue;
+    // 前後の音がすぐとなり（半拍以内）にあること
+    const gap = Math.round(0.5 / step) || 2;
+    if (!near(n, a, gap) || !near(n, b, gap)) continue;
+    for (const sh of [-12, 12]) {
+      const p = n.p + sh;
+      if (Math.abs(n.p - a.p) >= 8 && Math.abs(n.p - b.p) >= 8 && Math.abs(p - a.p) <= 5 && Math.abs(p - b.p) <= 5) { n.p = p; break; }
+    }
+  }
 }
