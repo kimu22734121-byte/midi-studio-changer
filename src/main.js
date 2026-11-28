@@ -99,14 +99,16 @@ async function importAudioBuffer(buf, title, source, isVideo = false) {
   // 楽器の聴き分け用に、音のコピーを残しておく（解析にはそのまま渡してしまうので）。長い曲は最初の8分まで
   const maxN = 8 * 60 * sampleRate;
   const keepL = samples.slice(0, maxN), keepR = right ? right.slice(0, maxN) : null;
+  const legacy = $('#legacy-analysis').checked;
   const s = await analyzeAudio(samples, sampleRate, {
-    title, source, right,
+    title, source, right, legacy,
     onProgress: (p, msg) => showStatus(msg, 0.05 + p * 0.85),
   });
   showStatus('楽器の種類を聴き分けています…（初めてのときは準備に少しかかります）', 0.9);
   await hearInstruments(s, keepL, keepR, sampleRate, { onProgress: (p) => showStatus('楽器の種類を聴き分けています…', 0.9 + p * 0.1) });
+  if (legacy) s.title += '（前の聴き取り方）';
   setSong(s);
-  showStatus('変換できました！ 下の「聴く」で再生してみてください。', 1);
+  showStatus(legacy ? '前の聴き取り方で変換できました！ 下の「聴く」で再生してみてください。' : '変換できました！ 下の「聴く」で再生してみてください。', 1);
 }
 
 $('#audio-file').addEventListener('change', (e) => {
@@ -360,6 +362,13 @@ async function chooseSet(id) {
   }
 }
 
+// 聴き取った楽器を使う／使わない
+$('#use-heard').addEventListener('change', (e) => {
+  player.useHeard = e.target.checked;
+  player.assignInstruments();
+  renderTracks();
+});
+
 $('#sf2-file').addEventListener('change', async (e) => {
   const f = e.target.files[0];
   e.target.value = '';
@@ -409,6 +418,7 @@ function esc(s) {
 
 function renderTracks() {
   const list = $('#track-list');
+  $('#use-heard-wrap').hidden = !song.heard;
   const ch = player.choice;
   const heard = song.heard;
   const usedHeard = player.settings.some((st) => st.heard);

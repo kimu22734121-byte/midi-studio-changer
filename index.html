@@ -33,6 +33,7 @@
         <p>スマホやパソコンに保存してある曲（MP3・WAV・M4A など）や、動画（MP4・MOV）を選んでください。曲を聴き取って、メロディ・伴奏・ドラムの打ち込みに作り直します。動画は音だけを使います。</p>
         <p class="hint">歌とメロディがはっきりした曲ほどうまくいきます。音がぎっしり詰まった曲は崩れやすいです。元の曲そのままではなく「打ち込み風の別バージョン」になります。</p>
         <label class="btn primary file-btn">曲・動画のファイルを選ぶ<input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.mov,.m4v,.webm"></label>
+        <label class="check"><input type="checkbox" id="legacy-analysis"> 前の聴き取り方（11月27日の版）で変換する <span class="hint">新しい聴き取り方と聴きくらべたいときに。マイク録音にも使われます</span></label>
         <details class="howto">
           <summary>📱 iPhoneで鳴っている音を取り込みたいときは（画面収録）</summary>
           <ol>
@@ -148,6 +149,7 @@
         <p id="set-status-text"></p>
       </div>
       <label class="btn small file-btn">📂 自分のサウンドフォント（.sf2）を読み込む<input type="file" id="sf2-file" accept=".sf2,audio/x-soundfont"></label>
+      <label class="check" id="use-heard-wrap" hidden><input type="checkbox" id="use-heard" checked> 元の曲から聴き取った楽器を使う <span class="hint">外すと、曲の感じだけで楽器を選びます</span></label>
       <h3 class="sub">パートごとの楽器</h3>
       <p>パートごとに楽器を選べます。🔇 を押すとそのパートを消せます。</p>
       <div id="track-list" class="track-list"></div>

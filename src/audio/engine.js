@@ -194,7 +194,7 @@ export class Player {
       st.program = tr.isDrum ? (tr.program ?? 0) : (prog ?? roles[tr.role] ?? 0);
       // 元の曲から聴き取った楽器があれば、それを使う（そのセットに同じ楽器が入っているときだけ）
       st.heard = false;
-      if (this.choice && tr.suggest != null && tr.program == null && this.hasPreset(tr.suggest, tr.isDrum)) {
+      if (this.choice && this.useHeard !== false && tr.suggest != null && tr.program == null && this.hasPreset(tr.suggest, tr.isDrum)) {
         st.program = tr.suggest;
         st.heard = true;
       }

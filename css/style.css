@@ -184,3 +184,5 @@ input[type="range"] { accent-color: var(--accent); height: 32px; }
 }
 .update-banner[hidden] { display: none; }
 #choice-info { white-space: pre-line; }
+.check { flex-wrap: wrap; }
+.check .hint { flex-basis: 100%; margin-left: 28px; }
