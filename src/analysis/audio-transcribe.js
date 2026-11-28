@@ -115,11 +115,11 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   onProgress(0.3, 'ドラムを聴き取っています…');
   const drumNotes = [];
   const seen = new Set();
-  for (const { i, p, s: str, w } of classifyDrums(flux, E, spread, hopT, spreadC)) {
+  for (const { i, p, s: str, w, lb } of classifyDrums(flux, E, spread, hopT, spreadC)) {
     const k = q(i * hopT);
     if (k < 0 || seen.has(`${k}:${p}`)) continue;
     seen.add(`${k}:${p}`);
-    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str), k, w: w ?? str });
+    drumNotes.push({ t: k * step, d: p === 49 ? 1 : 0.08, p, v: Math.round(60 + 60 * str), k, w: w ?? str, lb });
   }
   // スネアはふつう表の拍に並ぶ。半分以上が裏拍にあるなら、それは本物のスネアではない
   // （ユーロビートの裏拍で跳ねるベースと開いたハイハットが重なると、スネアに見える）ので、裏拍のものを外す
@@ -157,6 +157,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     }
   }
   thinCymbals(drumNotes, beat);
+  const kickLb = new Map(drumNotes.filter((n) => n.p === 36).map((n) => [n, n.lb]));
   // 拍の上にないバスドラで、その曲のふつうのバスドラよりはっきり弱いものは、
   // ひずんだギターの刻みやベースの「ドン」を拾ったものなので外す
   {
@@ -168,7 +169,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
       if (n.p === 36 && n.k % 4 !== 0 && n.w < TH * med) drumNotes.splice(i, 1);
     }
   }
-  for (const n of drumNotes) { delete n.k; delete n.w; }
+  for (const n of drumNotes) { delete n.k; delete n.w; delete n.lb; }
 
   // ---------- 4. メロディとコード用の細かい音の高さの解析 ----------
   const nB = 4096, hopB = 512;
@@ -205,6 +206,7 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   // ※ ドラムを弱める処理（時間方向の中央値）も試したが、歌の出だしまでぼけて成績が下がったので入れていない
   const CENTER = 1.5;
   const melMag = new Float64Array(nB / 2);
+  const melW = new Float64Array(nB / 2), cum = new Float64Array(nB / 2 + 1);
   // 歌の高さは短い時間幅（2048点・約0.09秒）で調べる（ボカロのような速い動きもまとまらないように）
   const nM = 2048;
   const fM = nM !== nB ? makeFFT(nM) : null;
@@ -267,13 +269,27 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
     } else {
       for (let b = 0; b < nB / 2; b++) melMag[b] = Math.sqrt(side ? Math.max(0, magB[b] - CENTER * magS[b]) : magB[b]);
     }
+    // 音の「山」だけを残す：まわり（高さに比例した幅）のならした大きさを引く。
+    // 伴奏がぎっしり鳴っていると、低い音の候補がどれも倍音を集めて強く見えてしまうのを防ぐ
+    const WK = 1.0;
+    {
+      const nb = melMag.length;
+      cum[0] = 0;
+      for (let b = 0; b < nb; b++) cum[b + 1] = cum[b] + melMag[b];
+      for (let b = 0; b < nb; b++) {
+        const w = Math.max(3, Math.round(b * 0.06));
+        const lo = Math.max(0, b - w), hi = Math.min(nb, b + w + 1);
+        melW[b] = Math.max(0, melMag[b] - WK * (cum[hi] - cum[lo]) / (hi - lo));
+      }
+    }
+    const MM = melW;
     for (let pi = 0; pi < NP; pi++) {
       let s = 0;
       for (let h = 0; h < H; h++) {
         const r = mRanges[pi * H + h];
         if (!r) break;
         let m = 0;
-        for (let b = r[0]; b <= r[1]; b++) if (melMag[b] > m) m = melMag[b];
+        for (let b = r[0]; b <= r[1]; b++) if (MM[b] > m) m = MM[b];
         s += hw[h] * m;
       }
       sal[f * NP + pi] = s;
@@ -311,6 +327,18 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   if (bassSpec) removeRepeatingKick(bassSpec, NBB, framesB, hopB / sr, kickTimes, beat, bRanges, bsal);
   const bass = trackBass(bsal, framesB, hopB / sr, q, step, bassOnsets);
   const useBass = bass.coverage > 0.2 && bass.notes.length >= 4;
+  // ベースの音の出だしと重なる、拍の上にないバスドラで、その曲の拍の上のバスドラより「低い音の割合」がはっきり小さいものは、
+  // ベースの「ボン」を拾ったものなので外す
+  if (useBass) {
+    const bassStarts = new Set(bass.notes.map((n) => Math.round(n.t / step)));
+    const on = [...kickLb].filter(([n]) => Math.round(n.t / step) % 4 === 0).map(([, v]) => v).sort((a, b) => a - b);
+    const ref = on.length >= 4 ? on[on.length >> 1] : 0;
+    for (let i = drumNotes.length - 1; ref && i >= 0; i--) {
+      const n = drumNotes[i];
+      const k = Math.round(n.t / step);
+      if (n.p === 36 && k % 4 !== 0 && bassStarts.has(k) && kickLb.get(n) < 0.6 * ref) drumNotes.splice(i, 1);
+    }
+  }
   const bassPcAt = (t) => {
     if (!useBass) return -1;
     const rel = grid.pos(t) * beat;
@@ -438,7 +466,9 @@ function trackMelody(sal, frames, hopT, q, step) {
     maxes[f] = m;
   }
   const ref = percentile(maxes, 0.9) || 1;
-  const prior = Array.from({ length: NP }, (_, i) => 0.6 + 0.4 * Math.exp(-0.5 * ((MEL_LO + i - 67) / 12) ** 2));
+  // 歌の高さの好み：G4 あたりがいちばん。低い方は今まで通りに下げ、高い方（ボカロ・J-POP の高い歌）はあまり下げない
+  const PC = 67, PWL = 12, PWH = 32;
+  const prior = Array.from({ length: NP }, (_, i) => 0.6 + 0.4 * Math.exp(-0.5 * ((MEL_LO + i - PC) / (MEL_LO + i < PC ? PWL : PWH)) ** 2));
   const S = new Float32Array(frames * NP);
   for (let f = 0; f < frames; f++) {
     for (let p = 0; p < NP; p++) S[f * NP + p] = Math.min(1.5, (sal[f * NP + p] / ref) * prior[p]);
@@ -518,6 +548,8 @@ function trackMelody(sal, frames, hopT, q, step) {
     }
     out.push(n);
   }
+  // 1つだけ1オクターブ跳ねた短い音は、倍音を拾った取り違え：前後の音に合うように1オクターブ戻す
+  fixOctaveSpikes(out, step);
   const res = out.map((n) => ({ t: n.qs * step, d: (n.qe - n.qs) * step * 0.95, p: n.p, v: n.v }));
   res.path = path; // フレームごとの高さ（NP＝鳴っていない）
   return res;
@@ -689,4 +721,23 @@ export function thinCymbals(notes, beat = 0.5) {
     }
   }
   for (let i = notes.length - 1; i >= 0; i--) if (del.has(notes[i])) notes.splice(i, 1);
+}
+
+/**
+ * 前後の音から 1オクターブ近く離れて、1オクターブ動かすと前後にぴったり合う「短い音」を直す。
+ * （歌の倍音を拾うと、1音だけ 1オクターブ上や下に跳ねたように見える。本物の歌ではめったにない）
+ */
+export function fixOctaveSpikes(notes, step) {
+  const near = (a, b, gap) => b && Math.abs(a.qs - (b.qs < a.qs ? b.qe : b.qs)) <= gap;
+  for (let i = 1; i < notes.length - 1; i++) {
+    const n = notes[i], a = notes[i - 1], b = notes[i + 1];
+    if ((n.qe - n.qs) * step > 0.35) continue;
+    // 前後の音がすぐとなり（半拍以内）にあること
+    const gap = Math.round(0.5 / step) || 2;
+    if (!near(n, a, gap) || !near(n, b, gap)) continue;
+    for (const sh of [-12, 12]) {
+      const p = n.p + sh;
+      if (Math.abs(n.p - a.p) >= 8 && Math.abs(n.p - b.p) >= 8 && Math.abs(p - a.p) <= 5 && Math.abs(p - b.p) <= 5) { n.p = p; break; }
+    }
+  }
 }

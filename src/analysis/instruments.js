@@ -263,26 +263,35 @@ export function classifyDrums(flux, E, spread, hopT, spreadC = null) {
   const peakNear = (arr, i) => Math.max(arr[i], arr[Math.min(n - 1, i + 1)], arr[Math.min(n - 1, i + 2)]);
   // バスドラ：低い音が急に出て、すぐ消える（長く続くのはベース）
   const kickF = new Set();
+  const kc = [];
   for (const { i, s } of pickPeaks(flux.low, Math.round(0.08 / hopT), 0.3)) {
     const top = peakNear(E.low, i);
     if (top <= 0) continue;
     // 長く続く低い音はふつうベース。ただし、曲の中でとびきり強い低い音の立ち上がり（上位の強さ）は、
     // 長く響いてもバスドラ（電子音の「ドゥーン」と響くバスドラ）
-    const strong = s >= 0.9;
+    // （ただし一番低い音が主のときだけ。スネアの胴の音やベースは 150〜300Hz も同じくらい強いので、ここでは外す）
+    const lb = flux.low[i] / (flux.body[i] + 1e-9);
+    const strong = s >= 0.9 && lb >= 1.6;
     if (after(E.low, i, 0.13) > top * 0.3 && !strong) continue;
     if (flux.low[i] < flux.mid[i] * 0.8) continue;
-    out.push({ i, p: 36, s, w: flux.low[i] / pickRef(flux.low) });
-    kickF.add(i);
+    kc.push({ i, s, lb });
+  }
+  // スネアらしさ：胴の音（150〜300Hz）がはっきり強く、ザッという音（1〜4kHz）が広く出て、ハイハットより長く続く
+  const snareLike = (i) => {
+    const body = Math.max(flux.body[i], flux.body[Math.min(n - 1, i + 1)], flux.body[Math.max(0, i - 1)]);
+    if (body <= 0.6 * pickRef(flux.body) || spread[i] < 0.35) return false;
+    const top = peakNear(E.mid, i);
+    return after(E.mid, i, 0.07) >= top * 0.15;
+  };
+  for (const c of kc) {
+    out.push({ i: c.i, p: 36, s: c.s, w: flux.low[c.i] / pickRef(flux.low), lb: c.lb });
+    kickF.add(c.i);
   }
   // スネア：「胴」の音（150〜300Hz）と、ザッという音（1〜4kHz）が同時に出る（バスドラと同時のものは除く）
   for (const { i, s } of pickPeaks(flux.mid, Math.round(0.08 / hopT), 0.3)) {
     if ([...kickF].some((k) => Math.abs(k - i) <= 2)) continue;
-    const body = Math.max(flux.body[i], flux.body[Math.min(n - 1, i + 1)], flux.body[Math.max(0, i - 1)]);
-    // 胴の音がはっきり強いこと（ピアノの低い音とハイハットが重なっただけのものを外す）
-    if (body <= 0.6 * pickRef(flux.body) || spread[i] < 0.35) continue;
-    // ザッという音がハイハットより長く続く
-    const top = peakNear(E.mid, i);
-    if (after(E.mid, i, 0.07) < top * 0.15) continue;
+    // 胴の音がはっきり強いこと（ピアノの低い音とハイハットが重なっただけのものを外す）、ザッという音がハイハットより長く続く
+    if (!snareLike(i)) continue;
     out.push({ i, p: 38, s });
   }
   // クラップ：胴の音がないザッという音。真ん中の音だけで見る（左右に広がったシンセに邪魔されない）。
