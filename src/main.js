@@ -1,5 +1,5 @@
 // 画面の動き。解析は analysis/client.js、音は audio/engine.js に任せる。
-import { analyzeAudio, loadMidi, loadScoreText, loadMusicXml, ANALYSIS_SR } from './analysis/client.js';
+import { analyzeAudio, hearInstruments, loadMidi, loadScoreText, loadMusicXml, ANALYSIS_SR } from './analysis/client.js';
 import { decodeToMono } from './audio/decode.js';
 import { MicRecorder } from './audio/recorder.js';
 import { Player } from './audio/engine.js';
@@ -96,10 +96,15 @@ async function importAudioBuffer(buf, title, source, isVideo = false) {
       : '音がほとんど入っていないようです');
   }
   if (duration > 8 * 60) toast('長い曲なので、最初の8分だけ変換します');
+  // 楽器の聴き分け用に、音のコピーを残しておく（解析にはそのまま渡してしまうので）。長い曲は最初の8分まで
+  const maxN = 8 * 60 * sampleRate;
+  const keepL = samples.slice(0, maxN), keepR = right ? right.slice(0, maxN) : null;
   const s = await analyzeAudio(samples, sampleRate, {
     title, source, right,
-    onProgress: (p, msg) => showStatus(msg, 0.05 + p * 0.95),
+    onProgress: (p, msg) => showStatus(msg, 0.05 + p * 0.85),
   });
+  showStatus('楽器の種類を聴き分けています…（初めてのときは準備に少しかかります）', 0.9);
+  await hearInstruments(s, keepL, keepR, sampleRate, { onProgress: (p) => showStatus('楽器の種類を聴き分けています…', 0.9 + p * 0.1) });
   setSong(s);
   showStatus('変換できました！ 下の「聴く」で再生してみてください。', 1);
 }
@@ -405,8 +410,17 @@ function esc(s) {
 function renderTracks() {
   const list = $('#track-list');
   const ch = player.choice;
-  $('#choice-info').hidden = !ch;
-  if (ch) $('#choice-info').textContent = `🎯 この曲（${ch.summary}）に合わせて、楽器を選びました。下の「パートごとの楽器」で変えることもできます。`;
+  const heard = song.heard;
+  const usedHeard = player.settings.some((st) => st.heard);
+  $('#choice-info').hidden = !ch && !heard?.names?.length;
+  const lines = [];
+  if (heard?.names?.length) lines.push(`🎧 元の曲から聴き取った楽器：${heard.names.join('・')}`);
+  if (ch) lines.push(usedHeard
+    ? `🎯 聴き取った楽器と、この曲の感じ（${ch.summary}）に合わせて、楽器を選びました。`
+    : `🎯 この曲（${ch.summary}）に合わせて、楽器を選びました。`);
+  if (heard?.electronic && !['edm', 'synth'].includes(player.set?.id)) lines.push('💡 電子音の曲のようです。「電子音（ユーロビート・EDM）」のセットもよく合います。');
+  if (lines.length) lines.push('下の「パートごとの楽器」で変えることもできます。');
+  $('#choice-info').textContent = lines.join('\n');
   list.innerHTML = '';
   const addedCount = song.tracks.filter((t) => t.layer).length;
   let addedList = null;

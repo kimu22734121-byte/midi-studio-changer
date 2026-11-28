@@ -192,8 +192,19 @@ export class Player {
       st.tone = tr.tone || defaultTone(tr.role, tr.isDrum);
       const prog = tr.layer && tr.program != null ? remap[tr.program] ?? tr.program : tr.program;
       st.program = tr.isDrum ? (tr.program ?? 0) : (prog ?? roles[tr.role] ?? 0);
+      // 元の曲から聴き取った楽器があれば、それを使う（そのセットに同じ楽器が入っているときだけ）
+      st.heard = false;
+      if (this.choice && tr.suggest != null && tr.program == null && this.hasPreset(tr.suggest, tr.isDrum)) {
+        st.program = tr.suggest;
+        st.heard = true;
+      }
       st.preset = this.bank ? this.bank.preset(st.program, tr.isDrum) : null;
     });
+  }
+
+  /** 今のセットに、この番号の楽器（ドラムならドラムセット）がそのまま入っているか */
+  hasPreset(program, isDrum) {
+    return !!this.bank?.sf?.presets.some((p) => p.program === program && (isDrum ? p.bank === 128 : p.bank === 0));
   }
 
   /** サウンドフォントのセットを切り替える（bank が null なら波形シンセ） */

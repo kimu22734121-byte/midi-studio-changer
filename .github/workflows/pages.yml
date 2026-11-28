@@ -33,7 +33,7 @@ jobs:
           VERSION="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M') ($SHORT)"
           mkdir -p _site/v/$SHORT
           cp -r css src _site/v/$SHORT/
-          cp -r soundfonts .nojekyll _site/
+          cp -r soundfonts vendor models .nojekyll _site/
           sed -e "s|href=\"css/style.css\"|href=\"v/$SHORT/css/style.css\"|" \
               -e "s|src=\"src/main.js\"|src=\"v/$SHORT/src/main.js\"|" \
               -e "s|<meta name=\"app-version\" content=\"dev\">|<meta name=\"app-version\" content=\"$VERSION\">|" \

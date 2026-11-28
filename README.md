@@ -81,6 +81,13 @@ python3 -m http.server 8000
   - CC0 1.0（パブリックドメイン）：商用・再配布・改変を含め、自由に使えます。ゲームのBGM用の音源としてもそのまま使えます。
 - 波形シンセの音：プログラムで作った音（外部の音源ファイルは使っていません）
 
+## 楽器の聴き分け
+
+音楽ファイル・動画・録音から曲を作るときに、元の曲で鳴っている楽器（ピアノ・ギター・ストリングス・サックス・シンセなど）を聴き分けて、パートの楽器選びに使います。すべてブラウザの中で動き、曲を外に送ることはありません。初めて使うときだけ、聴き分けの準備のファイル（約26MB）を読み込みます。
+
+- **YAMNet**（`models/yamnet.tflite`）— Google。AudioSet の 521 種類の音を聞き分けるモデル。**Apache License 2.0**（[models/LICENSE-yamnet](models/LICENSE-yamnet)）
+- **MediaPipe Tasks Audio**（`vendor/mediapipe/`、@mediapipe/tasks-audio 1.2.3）— Google。**Apache License 2.0**（[vendor/mediapipe/LICENSE](vendor/mediapipe/LICENSE)）
+
 ## サウンドフォントのセットを増やすには
 
 1. `.sf2` ファイルを `soundfonts/` に置く（商用・再配布OKのものだけ。ライセンスをこの README に追記）

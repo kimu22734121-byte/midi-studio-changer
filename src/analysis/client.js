@@ -6,6 +6,28 @@ import { parseAbc, looksLikeAbc } from './abc.js';
 import { parseChordText, looksLikeChordText } from './chord-text.js';
 import { readMusicXmlFile } from './musicxml.js';
 export { ANALYSIS_SR } from './audio-transcribe.js';
+import { identifyInstruments } from './instrument-id.js';
+
+/**
+ * 元の曲で鳴っている楽器を聴き分けて、曲（Song）のパートに「近い楽器」を書き込む。
+ * うまくいかなければ何もしない（今まで通りの楽器選びになる）。戻り値：聴き取った結果 or null
+ */
+export async function hearInstruments(song, left, right, sampleRate, { onProgress } = {}) {
+  let heard = null;
+  try {
+    heard = await identifyInstruments(left, right, sampleRate, { base: document.baseURI, onProgress });
+  } catch (e) {
+    console.warn('楽器の聴き分けに失敗しました', e);
+  }
+  if (!heard) return null;
+  song.heard = heard;
+  for (const tr of song.tracks) {
+    if (tr.layer || tr.program != null) continue;
+    const p = tr.isDrum ? heard.drums : tr.role === 'melody' ? heard.melody : tr.role === 'chords' ? heard.chords : tr.role === 'bass' ? heard.bass : tr.role === 'other' ? heard.other : null;
+    if (Number.isInteger(p)) tr.suggest = p;
+  }
+  return heard;
+}
 
 let worker = null;
 let seq = 0;

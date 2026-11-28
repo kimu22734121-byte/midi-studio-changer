@@ -2,6 +2,7 @@
 //
 // Song = {
 //   title: string,
+//   heard: { names, ... }?,       // 元の曲から聴き取った楽器（音声から作った曲だけ。src/analysis/instrument-id.js）
 //   bpm: number,                 // 1分あたりの拍の数（表示・MIDI保存用）
 //   source: string,              // 'audio' | 'midi' | 'mic' | 'abc' | 'chords' | 'musicxml'
 //   tracks: [{
@@ -11,6 +12,7 @@
 //     tone: string,              // 波形シンセの音色ID（src/audio/instruments.js）
 //     program: number | null,    // 元の楽器番号（GM 0-127）。MIDI・MusicXMLのときだけ。null ならセットのおすすめ楽器を使う
 //     layer: number,             // 0=元のパート、1以上=編成（src/core/arrange.js）で増やしたパート
+//     suggest: number?,          // 元の曲から聴き取った楽器に近い GM の番号（音声から作った曲だけ）
 //     notes: [{ t, d, p, v }]    // t=開始(秒) d=長さ(秒) p=音の高さ(MIDI番号) v=強さ(1-127)
 //   }]
 // }
@@ -48,8 +50,9 @@ export function lowerPolyphony(n) {
   return lower.length ? lower[lower.length - 1] : n;
 }
 
-export function createSong({ title = '無題', bpm = 120, source = '', tracks = [] }) {
+export function createSong({ title = '無題', bpm = 120, source = '', tracks = [], heard = null }) {
   const song = { title, bpm, source, tracks: [] };
+  if (heard) song.heard = heard; // 元の曲から聴き取った楽器（src/analysis/instrument-id.js）
   for (const tr of tracks) {
     if (!tr.notes || tr.notes.length === 0) continue;
     const notes = tr.notes
@@ -64,6 +67,7 @@ export function createSong({ title = '無題', bpm = 120, source = '', tracks = 
       tone: tr.tone || defaultTone(tr.role, tr.isDrum),
       program: Number.isInteger(tr.program) ? tr.program : null,
       layer: tr.layer || 0, // 0=元のパート、1以上=編成で増やしたパート
+      ...(Number.isInteger(tr.suggest) ? { suggest: tr.suggest } : {}), // 聴き取った楽器から選んだ楽器の番号
       notes,
     });
   }
