@@ -114,7 +114,7 @@ export function expandEnsemble(song, polyphony, mode = 'clean') {
     });
   }
   if (!extra.length) return song;
-  return createSong({ title: song.title, bpm: song.bpm, source: song.source, tracks: [...song.tracks, ...extra] });
+  return createSong({ title: song.title, bpm: song.bpm, source: song.source, heard: song.heard, tracks: [...song.tracks, ...extra] });
 }
 
 // ---------------- 元の曲から読み取る情報 ----------------

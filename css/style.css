@@ -183,3 +183,4 @@ input[type="range"] { accent-color: var(--accent); height: 32px; }
   max-width: calc(100% - 32px);
 }
 .update-banner[hidden] { display: none; }
+#choice-info { white-space: pre-line; }
