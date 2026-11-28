@@ -371,7 +371,10 @@ export function transcribeAudio(input, sr, { onProgress = () => {}, title = '録
   } else if (useBass) tracks.push({ name: 'ベース', role: 'bass', notes: bass.notes });
   tracks.push({ name: 'ドラム', role: 'drums', isDrum: true, notes: drumNotes });
   onProgress(1, 'できました');
-  return createSong({ title, bpm: Math.round(bpm * 10) / 10, source, tracks });
+  const song = createSong({ title, bpm: Math.round(bpm * 10) / 10, source, tracks });
+  // 確かめる用（画面では使わない）：出来上がった曲の時刻 → 元の録音の時刻
+  Object.defineProperty(song, 'toAudio', { value: (t) => grid.at(t / beat), enumerable: false });
+  return song;
 }
 
 function highPass(arr, win) {

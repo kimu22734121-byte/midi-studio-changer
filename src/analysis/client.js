@@ -34,7 +34,7 @@ let seq = 0;
 
 /** モノラル音声（Float32Array）→ Song */
 /** 音声（Float32Array）→ Song。right があれば samples は左、right は右（左右分けで歌を聴き取りやすくなる） */
-export function analyzeAudio(samples, sampleRate, { onProgress = () => {}, title, source, right = null } = {}) {
+export function analyzeAudio(samples, sampleRate, { onProgress = () => {}, title, source, right = null, legacy = false } = {}) {
   if (!worker) worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   const id = ++seq;
   return new Promise((resolve, reject) => {
@@ -49,7 +49,7 @@ export function analyzeAudio(samples, sampleRate, { onProgress = () => {}, title
     };
     worker.addEventListener('message', onMsg);
     worker.addEventListener('error', (e) => reject(new Error(e.message || '解析中にエラーが起きました')), { once: true });
-    worker.postMessage({ id, samples, right, sampleRate, options: { title, source } }, right ? [samples.buffer, right.buffer] : [samples.buffer]);
+    worker.postMessage({ id, samples, right, sampleRate, options: { title, source, legacy } }, right ? [samples.buffer, right.buffer] : [samples.buffer]);
   });
 }
 
